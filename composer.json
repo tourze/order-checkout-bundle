@@ -48,7 +48,7 @@
     "tourze/product-core-bundle": "0.0.*",
     "tourze/product-service-contracts": "1.0.*",
     "tourze/stock-manage-bundle": "0.0.*",
-    "tourze/symfony-aop-doctrine-bundle": "0.0.*",
+    "tourze/symfony-aop-doctrine-bundle": "1.0.*",
     "tourze/symfony-dependency-service-loader": "1.*",
     "tourze/symfony-routing-auto-loader-bundle": "1.0.*"
   },
