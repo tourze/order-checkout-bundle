@@ -37,7 +37,7 @@
     "tourze/doctrine-timestamp-bundle": "1.0.*",
     "tourze/doctrine-user-bundle": "1.0.*",
     "tourze/easy-admin-enum-field-bundle": "1.0.*",
-    "tourze/enum-extra": "1.*",
+    "tourze/enum-extra": "1.0.*",
     "tourze/json-rpc-cache-bundle": "1.0.*",
     "tourze/json-rpc-core": "1.0.*",
     "tourze/json-rpc-lock-bundle": "1.0.*",
@@ -49,7 +49,7 @@
     "tourze/product-service-contracts": "1.0.*",
     "tourze/stock-manage-bundle": "0.0.*",
     "tourze/symfony-aop-doctrine-bundle": "1.0.*",
-    "tourze/symfony-dependency-service-loader": "1.*",
+    "tourze/symfony-dependency-service-loader": "1.0.*",
     "tourze/symfony-routing-auto-loader-bundle": "1.0.*"
   },
   "require-dev": {
