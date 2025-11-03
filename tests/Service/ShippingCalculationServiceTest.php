@@ -107,8 +107,8 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '广州市', 'district' => '荔湾区'];
 
-        $template = $this->createMock(ShippingTemplate::class);
-        $template->method('getId')->willReturn('template1');
+        // 创建真实的 ShippingTemplate 对象，getId() 会自动生成
+        $template = new ShippingTemplate();
 
         $this->addressResolver->expects($this->once())
             ->method('resolveAddress')
@@ -141,8 +141,10 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '广州市', 'district' => '荔湾区'];
 
-        $template = $this->createMock(ShippingTemplate::class);
-        $template->method('getId')->willReturn('template1');
+        // 创建部分 mock 的 ShippingTemplate 对象，不 mock getId() 方法
+        $template = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'calculateBasicFee', 'getFreeShippingThreshold'
+        ]);
         $template->method('getName')->willReturn('默认模板');
         $template->method('getChargeType')->willReturn(ChargeType::WEIGHT);
         $template->method('calculateBasicFee')->with('3.000')->willReturn('12.00');
@@ -186,8 +188,10 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '广州市', 'district' => '荔湾区'];
 
-        $template = $this->createMock(ShippingTemplate::class);
-        $template->method('getId')->willReturn('template1');
+        // 创建部分 mock 的 ShippingTemplate 对象，不 mock getId() 方法
+        $template = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'calculateBasicFee', 'getFreeShippingThreshold'
+        ]);
         $template->method('getName')->willReturn('默认模板');
         $template->method('getChargeType')->willReturn(ChargeType::WEIGHT);
         $template->method('calculateBasicFee')->with('1.500')->willReturn('12.00');
@@ -230,13 +234,17 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '广州市', 'district' => '荔湾区'];
 
-        $template = $this->createMock(ShippingTemplate::class);
-        $template->method('getId')->willReturn('template1');
+        // 创建部分 mock 的 ShippingTemplate 对象，不 mock getId() 方法
+        $template = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'getFreeShippingThreshold'
+        ]);
         $template->method('getName')->willReturn('默认模板');
         $template->method('getChargeType')->willReturn(ChargeType::WEIGHT);
         $template->method('getFreeShippingThreshold')->willReturn('99.00');
 
-        $area = $this->createMock(ShippingTemplateArea::class);
+        $area = $this->createPartialMock(ShippingTemplateArea::class, [
+            'hasCustomRates', 'calculateFee', 'hasFreeShipping', 'getAreaName'
+        ]);
         $area->method('hasCustomRates')->willReturn(true);
         $area->method('calculateFee')->with('1.500')->willReturn('8.00');
         $area->method('hasFreeShipping')->willReturn(false);
@@ -283,8 +291,10 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '深圳市', 'district' => '南山区'];
 
-        $template = $this->createMock(ShippingTemplate::class);
-        $template->method('getId')->willReturn('template1');
+        // 创建部分 mock 的 ShippingTemplate 对象，不 mock getId() 方法
+        $template = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'calculateBasicFee', 'getFreeShippingThreshold'
+        ]);
         $template->method('getName')->willReturn('按件计费模板');
         $template->method('getChargeType')->willReturn(ChargeType::QUANTITY);
         $template->method('calculateBasicFee')->with('5')->willReturn('15.00');
@@ -330,15 +340,19 @@ final class ShippingCalculationServiceTest extends TestCase
 
         $address = ['province' => '广东省', 'city' => '深圳市', 'district' => '南山区'];
 
-        $defaultTemplate = $this->createMock(ShippingTemplate::class);
-        $defaultTemplate->method('getId')->willReturn('template1');
+        // 创建部分 mock 的默认模板，不 mock getId() 方法
+        $defaultTemplate = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'calculateBasicFee', 'getFreeShippingThreshold'
+        ]);
         $defaultTemplate->method('getName')->willReturn('默认模板');
         $defaultTemplate->method('getChargeType')->willReturn(ChargeType::WEIGHT);
         $defaultTemplate->method('calculateBasicFee')->with('1.000')->willReturn('8.00');
         $defaultTemplate->method('getFreeShippingThreshold')->willReturn('99.00');
 
-        $customTemplate = $this->createMock(ShippingTemplate::class);
-        $customTemplate->method('getId')->willReturn('template2');
+        // 创建部分 mock 的自定义模板，不 mock getId() 方法
+        $customTemplate = $this->createPartialMock(ShippingTemplate::class, [
+            'getName', 'getChargeType', 'calculateBasicFee', 'getFreeShippingThreshold'
+        ]);
         $customTemplate->method('getName')->willReturn('特殊模板');
         $customTemplate->method('getChargeType')->willReturn(ChargeType::WEIGHT);
         $customTemplate->method('calculateBasicFee')->with('1.000')->willReturn('12.00');

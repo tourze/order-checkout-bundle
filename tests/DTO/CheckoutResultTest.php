@@ -185,8 +185,9 @@ final class CheckoutResultTest extends TestCase
     public function testToArray(): void
     {
         $cartItem = $this->createMock(CartItem::class);
-        $cartItem->method('getId')->willReturn('1');
-        $cartItem->method('getQuantity')->willReturn(2);
+        // 移除对 final 方法的 mock 配置
+        // $cartItem->method('getId')->willReturn('1');
+        // $cartItem->method('getQuantity')->willReturn(2);
 
         $priceResult = $this->createMock(PriceResult::class);
         $priceResult->method('toArray')->willReturn(['subtotal' => 100.0]);
