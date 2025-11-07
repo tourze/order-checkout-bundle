@@ -6,6 +6,7 @@ namespace Tourze\OrderCheckoutBundle\Procedure\Checkout;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\SecurityBundle\Security;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Symfony\Component\Validator\Constraints as Assert;
@@ -21,6 +22,7 @@ use Tourze\JsonRPCLogBundle\Attribute\Log;
 use Tourze\OrderCartBundle\Interface\CartDataProviderInterface;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
+use Tourze\OrderCheckoutBundle\Event\OrderCompletedEvent;
 use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\Service\CheckoutService;
 use Tourze\ProductCoreBundle\Entity\Sku;
@@ -61,6 +63,7 @@ class ProcessCheckoutProcedure extends LockableProcedure
         private readonly CheckoutService $checkoutService,
         private readonly CartDataProviderInterface $cartDataProvider,
         private readonly SkuServiceInterface $skuService,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -71,7 +74,11 @@ class ProcessCheckoutProcedure extends LockableProcedure
             throw new ApiException('用户未登录或类型错误');
         }
 
-        if ($this->addressId <= 0) {
+        // 检测是否为纯兑换券场景
+        $isRedeemOnlyOrder = $this->isRedeemOnlyOrder();
+
+        // 纯兑换券场景可以不需要地址，其他场景必须要地址
+        if (!$isRedeemOnlyOrder && $this->addressId <= 0) {
             throw new ApiException('请选择收货地址');
         }
 
@@ -85,9 +92,10 @@ class ProcessCheckoutProcedure extends LockableProcedure
             $checkoutItems,
             $appliedCoupons,
             [
-                'addressId' => $this->addressId,
+                'addressId' => $isRedeemOnlyOrder ? 0 : $this->addressId, // 兑换券订单使用虚拟地址
                 'pointsToUse' => $this->pointsToUse,
                 'orderRemark' => $this->orderRemark,
+                'orderType' => $isRedeemOnlyOrder ? 'redeem' : 'normal', // 标识订单类型
             ]
         );
 
@@ -106,10 +114,15 @@ class ProcessCheckoutProcedure extends LockableProcedure
             ];
 
             // 如果有库存问题，返回警告信息
+            $stockWarnings = [];
             if ($checkoutResult->hasStockIssues()) {
                 $stockValidation = $checkoutResult->getStockValidation();
-                $result['stockWarnings'] = $stockValidation?->getWarnings() ?? [];
+                $stockWarnings = $stockValidation?->getWarnings() ?? [];
+                $result['stockWarnings'] = $stockWarnings;
             }
+
+            // 分发订单完成事件
+            $this->dispatchOrderCompletedEvent($user, $checkoutResult, $context, $stockWarnings);
 
             return $result;
         } catch (InsufficientStockException $e) {
@@ -158,7 +171,13 @@ class ProcessCheckoutProcedure extends LockableProcedure
         if ($this->fromCart) {
             return $this->getCartCheckoutItems($user);
         }
+
+        // 检测纯兑换券场景：没有商品但有兑换券
         if ([] === $this->skuItems) {
+            if ($this->isRedeemOnlyOrder()) {
+                // 纯兑换券场景，返回空数组，后续由价格计算生成兑换商品
+                return [];
+            }
             throw new ApiException('请选择商品或启用购物车模式');
         }
 
@@ -227,6 +246,54 @@ class ProcessCheckoutProcedure extends LockableProcedure
         }
 
         return $checkoutItems;
+    }
+
+    /**
+     * 检测是否为纯兑换券订单
+     * 纯兑换券订单的特征：不从购物车获取、没有商品、但有兑换券
+     */
+    private function isRedeemOnlyOrder(): bool
+    {
+        return !$this->fromCart && 
+               [] === $this->skuItems && 
+               null !== $this->couponCode && 
+               '' !== trim($this->couponCode);
+    }
+
+    /**
+     * 分发订单完成事件
+     * 
+     * @param array<string, mixed> $stockWarnings
+     */
+    private function dispatchOrderCompletedEvent(
+        UserInterface $user, 
+        \Tourze\OrderCheckoutBundle\DTO\CheckoutResult $checkoutResult, 
+        CalculationContext $context,
+        array $stockWarnings
+    ): void {
+        // 构建事件元数据
+        $metadata = [
+            'orderType' => $context->getMetadataValue('orderType', 'normal'),
+            'appliedCoupons' => $context->getAppliedCoupons(),
+            'addressId' => $context->getMetadataValue('addressId'),
+            'pointsToUse' => $context->getMetadataValue('pointsToUse', 0),
+            'orderRemark' => $context->getMetadataValue('orderRemark'),
+            'stockWarnings' => $stockWarnings,
+            'itemsCount' => count($context->getItems()),
+            'fromCart' => $this->fromCart,
+        ];
+
+        // 创建并分发事件
+        $event = new OrderCompletedEvent(
+            orderId: $checkoutResult->getOrderId(),
+            orderNumber: $checkoutResult->getOrderNumber(),
+            user: $user,
+            totalAmount: $checkoutResult->getFinalTotal(),
+            paymentRequired: $checkoutResult->getFinalTotal() > 0,
+            orderState: $checkoutResult->getOrderState(),
+            metadata: $metadata
+        );
+        $this->eventDispatcher->dispatch($event);
     }
 
     public static function getMockResult(): ?array

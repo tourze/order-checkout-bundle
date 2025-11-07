@@ -9,6 +9,7 @@ use Tourze\OrderCartBundle\Service\CartManager;
 use Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator;
 use Tourze\OrderCheckoutBundle\Calculator\BasicShippingCalculator;
 use Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator;
+use Tourze\OrderCheckoutBundle\Calculator\CouponCalculator;
 use Tourze\OrderCheckoutBundle\Contract\PriceCalculatorInterface;
 use Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface;
 use Tourze\OrderCheckoutBundle\Contract\ShippingCalculatorInterface;
@@ -17,6 +18,7 @@ use Tourze\OrderCheckoutBundle\Promotion\FullReductionMatcher;
 use Tourze\OrderCheckoutBundle\Service\BasicStockValidator;
 use Tourze\OrderCheckoutBundle\Service\CheckoutService;
 use Tourze\OrderCheckoutBundle\Service\PriceCalculationService;
+use Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper;
 
 return static function (ContainerConfigurator $container): void {
     $services = $container->services();
@@ -41,13 +43,12 @@ return static function (ContainerConfigurator $container): void {
 
     $services->set(BasicShippingCalculator::class);
 
+    $services->set(CouponWorkflowHelper::class)
+        ->autowire()
+    ;
+
     $services->set(CheckoutService::class)
-        ->args([
-            service(CartManager::class),
-            service(PriceCalculationService::class),
-            service(StockValidatorInterface::class),
-            service(ShippingCalculatorInterface::class),
-        ])
+        ->autowire()
     ;
 
     // 价格计算器
@@ -56,6 +57,10 @@ return static function (ContainerConfigurator $container): void {
     ;
 
     $services->set(PromotionCalculator::class)
+        ->tag('order_checkout.price_calculator')
+    ;
+
+    $services->set(CouponCalculator::class)
         ->tag('order_checkout.price_calculator')
     ;
 
@@ -72,6 +77,7 @@ return static function (ContainerConfigurator $container): void {
     $services->get(PriceCalculationService::class)
         ->call('addCalculator', [service(BasePriceCalculator::class)])
         ->call('addCalculator', [service(PromotionCalculator::class)])
+        ->call('addCalculator', [service(CouponCalculator::class)])
     ;
 
     // 自动配置促销匹配器

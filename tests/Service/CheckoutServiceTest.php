@@ -25,6 +25,7 @@ use Tourze\OrderCheckoutBundle\DTO\StockValidationResult;
 use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\Service\CheckoutService;
 use Tourze\OrderCheckoutBundle\Service\ContentFilterService;
+use Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper;
 use Tourze\OrderCheckoutBundle\Service\PriceCalculationService;
 use Tourze\StockManageBundle\Service\StockOperator;
 
@@ -56,6 +57,8 @@ final class CheckoutServiceTest extends TestCase
 
     private UserInterface&MockObject $user;
 
+    private CouponWorkflowHelper&MockObject $couponHelper;
+
     protected function setUp(): void
     {
         $this->priceCalculationService = $this->createMock(PriceCalculationService::class);
@@ -68,6 +71,21 @@ final class CheckoutServiceTest extends TestCase
         $this->stockOperator = $this->createMock(StockOperator::class);
         $this->deliveryAddressService = $this->createMock(DeliveryAddressService::class);
         $this->user = $this->createMock(UserInterface::class);
+        $this->couponHelper = $this->createMock(CouponWorkflowHelper::class);
+
+        $this->couponHelper->method('extractCouponExtraItems')->willReturn([]);
+        $this->couponHelper->method('mergeCheckoutItems')
+            ->willReturnCallback(static function (array $baseItems, array $extraItems): array {
+                foreach ($extraItems as $extra) {
+                    if (isset($extra['item']) && $extra['item'] instanceof CheckoutItem) {
+                        $baseItems[] = $extra['item'];
+                    }
+                }
+
+                return $baseItems;
+            });
+        $this->couponHelper->method('extractCouponCodes')->willReturn([]);
+        $this->couponHelper->method('lockCouponCodes')->willReturn([]);
 
         $this->checkoutService = new CheckoutService(
             $this->priceCalculationService,
@@ -78,7 +96,8 @@ final class CheckoutServiceTest extends TestCase
             $this->contractService,
             $this->cartManager,
             $this->stockOperator,
-            $this->deliveryAddressService
+            $this->deliveryAddressService,
+            $this->couponHelper
         );
     }
 

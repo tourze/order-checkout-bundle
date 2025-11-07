@@ -42,7 +42,8 @@ class PriceCalculationService
      */
     public function calculate(CalculationContext $context): PriceResult
     {
-        if (0 === count($context->getItems())) {
+        // 如果没有商品且没有优惠券，直接返回空结果
+        if (0 === count($context->getItems()) && 0 === count($context->getAppliedCoupons())) {
             return PriceResult::empty();
         }
 

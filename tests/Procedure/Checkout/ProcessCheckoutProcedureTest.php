@@ -389,4 +389,61 @@ final class ProcessCheckoutProcedureTest extends AbstractProcedureTestCase
 
         $this->procedure->execute();
     }
+
+    public function testExecuteRedeemOnlyOrderWithCouponCode(): void
+    {
+        // Arrange: 创建已登录用户
+        $user = $this->createNormalUser('redeem_test_user_' . uniqid());
+        $this->setAuthenticatedUser($user);
+
+        // 模拟优惠券系统返回兑换商品
+        // 注意：这里需要mock CouponEvaluator和相关服务，具体实现依赖于实际的优惠券系统集成
+
+        // 设置纯兑换券参数
+        $this->procedure->skuItems = []; // 无商品
+        $this->procedure->fromCart = false;
+        $this->procedure->couponCode = 'REDEEM_TEST_123';
+        $this->procedure->addressId = 0; // 兑换券订单不需要地址
+
+        // Act: 执行兑换
+        // 注意：由于这是单元测试，实际的兑换逻辑可能需要mock相关服务
+        // 这里先验证基本的参数验证和流程不会抛出异常
+        
+        // 由于涉及到复杂的优惠券系统集成，这个测试需要在集成测试环境中运行
+        // 或者需要extensive mocking，这里先标记为需要进一步实现
+        static::markTestSkipped('需要在集成测试环境中运行或mock优惠券系统');
+    }
+
+    public function testIsRedeemOnlyOrderDetection(): void
+    {
+        // Arrange: 创建已登录用户
+        $user = $this->createNormalUser('redeem_detection_test_' . uniqid());
+        $this->setAuthenticatedUser($user);
+
+        // Test Case 1: 纯兑换券场景
+        $this->procedure->skuItems = [];
+        $this->procedure->fromCart = false;
+        $this->procedure->couponCode = 'TEST_REDEEM_COUPON';
+        
+        // 使用反射访问私有方法进行测试
+        $reflection = new \ReflectionClass($this->procedure);
+        $isRedeemOnlyMethod = $reflection->getMethod('isRedeemOnlyOrder');
+        $isRedeemOnlyMethod->setAccessible(true);
+        
+        $this->assertTrue($isRedeemOnlyMethod->invoke($this->procedure), '应该检测到纯兑换券订单');
+
+        // Test Case 2: 正常商品订单
+        $this->procedure->skuItems = [['skuId' => '123', 'quantity' => 1]];
+        $this->assertFalse($isRedeemOnlyMethod->invoke($this->procedure), '不应该检测为纯兑换券订单');
+
+        // Test Case 3: 从购物车下单
+        $this->procedure->skuItems = [];
+        $this->procedure->fromCart = true;
+        $this->assertFalse($isRedeemOnlyMethod->invoke($this->procedure), '购物车模式不应该检测为纯兑换券订单');
+
+        // Test Case 4: 没有优惠券
+        $this->procedure->fromCart = false;
+        $this->procedure->couponCode = null;
+        $this->assertFalse($isRedeemOnlyMethod->invoke($this->procedure), '没有优惠券不应该检测为纯兑换券订单');
+    }
 }

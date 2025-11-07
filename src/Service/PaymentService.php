@@ -10,6 +10,7 @@ use OrderCoreBundle\Enum\OrderState;
 use OrderCoreBundle\Repository\ContractRepository;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tourze\OrderCheckoutBundle\Exception\PaymentException;
+use Tourze\OrderCheckoutBundle\Service\MoneyCalculator;
 use Tourze\PaymentContracts\Enum\PaymentType;
 use Tourze\PaymentContracts\Event\PaymentParametersRequestedEvent;
 use Tourze\PaymentContracts\ValueObject\AttachData;
@@ -96,7 +97,7 @@ class PaymentService
             'wechat_pay' => [
                 'appid' => $_ENV['WECHAT_APP_ID'] ?? 'mock_app_id',
                 'mch_id' => $_ENV['WECHAT_MCH_ID'] ?? 'mock_mch_id',
-                'total_fee' => (int) ($totalAmount * 100), // 微信支付单位是分
+                'total_fee' => MoneyCalculator::toCents($totalAmount), // 微信支付单位是分
                 'body' => '订单支付-' . $contract->getSn(),
                 'notify_url' => $_ENV['PAYMENT_NOTIFY_URL'] ?? 'https://example.com/payment/notify',
             ],
@@ -110,17 +111,21 @@ class PaymentService
 
     /**
      * 计算订单总金额
+     * 使用 MoneyCalculator 避免浮点数精度问题
      */
     public function calculateOrderTotal(Contract $contract): float
     {
-        $total = 0.0;
+        $amounts = [];
         foreach ($contract->getPrices() as $price) {
             if (false === $price->isRefund()) {
-                $total += (float) $price->getMoney();
+                $money = $price->getMoney();
+                if (null !== $money) {
+                    $amounts[] = $money;
+                }
             }
         }
 
-        return $total;
+        return (float) MoneyCalculator::sum($amounts);
     }
 
     /**

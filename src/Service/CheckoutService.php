@@ -27,6 +27,7 @@ use Tourze\OrderCheckoutBundle\DTO\ShippingResult;
 use Tourze\OrderCheckoutBundle\DTO\StockValidationResult;
 use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\ProductCoreBundle\Enum\PriceType;
+use Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper;
 use Tourze\StockManageBundle\Service\StockOperator;
 use Tourze\Symfony\AopDoctrineBundle\Attribute\Transactional;
 
@@ -46,6 +47,7 @@ class CheckoutService
         private readonly CartManagerInterface $cartManager,
         private readonly StockOperator $stockOperator,
         private readonly DeliveryAddressService $deliveryAddressService,
+        private readonly CouponWorkflowHelper $couponHelper,
     ) {
     }
 
@@ -69,10 +71,11 @@ class CheckoutService
         }
 
         $checkoutItems = $this->convertToCheckoutItems($cartItems);
-        $stockValidation = $this->performStockValidation($checkoutItems);
         $calculationContext = $this->buildCalculationContext($user, $checkoutItems, $appliedCoupons, $options);
         $priceResult = $this->priceCalculationService->calculate($calculationContext);
-        $shippingResult = $this->calculateShipping($user, $checkoutItems, $options);
+        $extraItems = $this->couponHelper->extractCouponExtraItems($priceResult);
+        $stockValidation = $this->performStockValidation($checkoutItems, $extraItems);
+        $shippingResult = $this->calculateShipping($user, $this->couponHelper->mergeCheckoutItems($checkoutItems, $extraItems), $options);
 
         return new CheckoutResult(
             $checkoutItems,
@@ -103,7 +106,8 @@ class CheckoutService
         $checkoutItems = $this->convertToCheckoutItems($cartItems);
         $calculationContext = $this->buildCalculationContext($user, $checkoutItems, $appliedCoupons, $options);
         $priceResult = $this->priceCalculationService->calculate($calculationContext);
-        $shippingResult = $this->calculateShipping($user, $checkoutItems, $options);
+        $extraItems = $this->couponHelper->extractCouponExtraItems($priceResult);
+        $shippingResult = $this->calculateShipping($user, $this->couponHelper->mergeCheckoutItems($checkoutItems, $extraItems), $options);
 
         return new CheckoutResult(
             $checkoutItems,
@@ -122,30 +126,61 @@ class CheckoutService
     #[Transactional]
     public function process(CalculationContext $context): CheckoutResult
     {
-        $stockValidation = $this->validateStockForProcessing($context);
         $priceResult = $this->priceCalculationService->calculate($context);
-        $contract = $this->createOrder($context, $priceResult, null);
+        $couponCodes = $this->couponHelper->extractCouponCodes($priceResult);
+        $lockedCodes = [];
+        $redeemed = false;
+        $extraItems = [];
+        $contract = null;
 
-        $this->executePostOrderOperations($context, $contract);
+        try {
+            if ([] !== $couponCodes) {
+                $lockedCodes = $this->couponHelper->lockCouponCodes($context->getUser(), $couponCodes);
+            }
 
-        return new CheckoutResult(
-            $context->getItems(),
-            $priceResult,
-            null,
-            $stockValidation,
-            $context->getAppliedCoupons(),
-            $contract->getId(),
-            $contract->getSn(),
-            $contract->getState()->value
-        );
+            $extraItems = $this->couponHelper->extractCouponExtraItems($priceResult);
+            $stockValidation = $this->validateStockForProcessing($context, $extraItems);
+            [$contract, $persistedExtraItems] = $this->createOrder($context, $priceResult, null, $extraItems);
+
+            if ([] !== $lockedCodes) {
+                $this->couponHelper->redeemCouponCodes($lockedCodes, $contract);
+                $redeemed = true;
+            }
+
+            $this->couponHelper->logCouponUsage($context, $contract, $priceResult);
+
+            $this->executePostOrderOperations($context, $contract, $persistedExtraItems);
+
+            return new CheckoutResult(
+                $context->getItems(),
+                $priceResult,
+                null,
+                $stockValidation,
+                $context->getAppliedCoupons(),
+                $contract->getId(),
+                $contract->getSn(),
+                $contract->getState()->value
+            );
+        } finally {
+            if (!$redeemed && [] !== $lockedCodes) {
+                $this->couponHelper->unlockCouponCodes($lockedCodes, $context->getUser());
+            }
+        }
     }
 
     /**
      * 验证库存以进行处理
      */
-    private function validateStockForProcessing(CalculationContext $context): StockValidationResult
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function validateStockForProcessing(CalculationContext $context, array $extraItems): StockValidationResult
     {
-        $stockValidation = $this->stockValidator->validate($context->getItems());
+        $items = $this->couponHelper->mergeCheckoutItems($context->getItems(), $extraItems);
+        $stockValidation = $this->stockValidator->validate($items);
         if (!$stockValidation->isValid()) {
             throw new CheckoutException('库存验证失败: ' . implode(', ', $stockValidation->getErrors()));
         }
@@ -155,9 +190,12 @@ class CheckoutService
     /**
      * 执行订单创建后的操作
      */
-    private function executePostOrderOperations(CalculationContext $context, Contract $contract): void
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function executePostOrderOperations(CalculationContext $context, Contract $contract, array $extraItems): void
     {
-        $this->lockStock($context->getItems());
+        $this->lockStock($this->couponHelper->mergeCheckoutItems($context->getItems(), $extraItems));
         $this->clearCartSelectedItems($context->getUser(), $context->getItems());
         $this->handleOrderRemarkIfPresent($context, $contract);
     }
@@ -177,26 +215,40 @@ class CheckoutService
      * 创建订单
      * @param ShippingResult|null $shippingResult
      */
-    private function createOrder(CalculationContext $context, PriceResult $priceResult, ?ShippingResult $shippingResult = null): Contract
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     * @return array{0: Contract, 1: array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>}
+     */
+    private function createOrder(CalculationContext $context, PriceResult $priceResult, ?ShippingResult $shippingResult = null, array $extraItems = []): array
     {
         $contract = $this->buildContractEntity($context, $priceResult);
-        $this->persistOrderData($contract, $context, $priceResult, $shippingResult);
-        return $contract;
+        $updatedExtraItems = $this->persistOrderData($contract, $context, $priceResult, $shippingResult, $extraItems);
+
+        return [$contract, $updatedExtraItems];
     }
 
     /**
      * 持久化订单数据
      */
-    private function persistOrderData(Contract $contract, CalculationContext $context, PriceResult $priceResult, ?ShippingResult $shippingResult): void
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     * @return array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>
+     */
+    private function persistOrderData(Contract $contract, CalculationContext $context, PriceResult $priceResult, ?ShippingResult $shippingResult, array $extraItems): array
     {
         $this->entityManager->persist($contract);
 
-        $orderProducts = $this->createOrderProducts($contract, $context->getItems());
-        $this->createOrderPrices($contract, $orderProducts, $priceResult, $shippingResult);
+        $orderProductResult = $this->createOrderProducts($contract, $context->getItems(), $extraItems);
+        $baseOrderProducts = $orderProductResult['base'];
+        $extraOrderProducts = $orderProductResult['extra'];
+        $updatedExtraItems = $orderProductResult['extraItems'];
+        $this->createOrderPrices($contract, $baseOrderProducts, $extraOrderProducts, $priceResult, $shippingResult, $updatedExtraItems);
         $this->createOrderContact($contract, $context);
 
         $this->entityManager->flush();
         $this->contractService->createOrder($contract);
+
+        return $updatedExtraItems;
     }
 
     /**
@@ -229,6 +281,15 @@ class CheckoutService
         $this->setContractType($contract, $context);
         $this->setContractRemark($contract, $context);
         $this->setContractPricing($contract, $priceResult);
+        $this->applyCouponState($contract, $priceResult);
+    }
+
+    private function applyCouponState(Contract $contract, PriceResult $priceResult): void
+    {
+        $shouldMarkPaid = (bool) $priceResult->getDetail('coupon_should_mark_paid', false);
+        if ($shouldMarkPaid) {
+            $contract->setState(OrderState::PAID);
+        }
     }
 
     /**
@@ -298,16 +359,46 @@ class CheckoutService
      * @param CheckoutItem[] $items
      * @return OrderProduct[]
      */
-    private function createOrderProducts(Contract $contract, array $items): array
+    /**
+     * @param CheckoutItem[] $items
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     * @return array{base: array<OrderProduct>, extra: array<OrderProduct>, extraItems: array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>}
+     */
+    private function createOrderProducts(Contract $contract, array $items, array $extraItems): array
     {
-        $orderProducts = [];
+        $baseProducts = [];
         foreach ($items as $item) {
             $orderProduct = $this->buildOrderProduct($contract, $item);
+            $orderProduct->setIsGift(false);
+            $orderProduct->setSource('normal'); // 明确标记为正常购买
             $contract->addProduct($orderProduct);
             $this->entityManager->persist($orderProduct);
-            $orderProducts[] = $orderProduct;
+            $baseProducts[] = $orderProduct;
         }
-        return $orderProducts;
+
+        $extraProducts = [];
+        foreach ($extraItems as $index => $extra) {
+            $checkoutItem = $extra['item'] ?? null;
+            if (!$checkoutItem instanceof CheckoutItem) {
+                continue;
+            }
+
+            $orderProduct = $this->buildOrderProduct($contract, $checkoutItem);
+            $type = $extra['type'] ?? 'coupon';
+            $orderProduct->setRemark($this->couponHelper->describeExtraItem($type));
+            $orderProduct->setSource($type);
+            $orderProduct->setIsGift(in_array($type,['coupon_gift','coupon_redeem']));
+            $contract->addProduct($orderProduct);
+            $this->entityManager->persist($orderProduct);
+            $extraItems[$index]['order_product'] = $orderProduct;
+            $extraProducts[] = $orderProduct;
+        }
+
+        return [
+            'base' => $baseProducts,
+            'extra' => $extraProducts,
+            'extraItems' => $extraItems,
+        ];
     }
 
     /**
@@ -348,9 +439,14 @@ class CheckoutService
      * @param OrderProduct[] $orderProducts
      * @param ShippingResult|null $shippingResult
      */
-    private function createOrderPrices(Contract $contract, array $orderProducts, PriceResult $priceResult, ?ShippingResult $shippingResult = null): void
+    /**
+     * @param OrderProduct[] $baseOrderProducts
+     * @param OrderProduct[] $extraOrderProducts
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function createOrderPrices(Contract $contract, array $baseOrderProducts, array $extraOrderProducts, PriceResult $priceResult, ?ShippingResult $shippingResult = null, array $extraItems = []): void
     {
-        $this->createProductPrices($contract, $orderProducts, $priceResult);
+        $this->createProductPrices($contract, $baseOrderProducts, $extraOrderProducts, $priceResult, $extraItems);
         $this->createShippingPriceIfNeeded($contract, $shippingResult);
     }
 
@@ -390,13 +486,21 @@ class CheckoutService
      *
      * @param OrderProduct[] $orderProducts
      */
-    private function createProductPrices(Contract $contract, array $orderProducts, PriceResult $priceResult): void
+    /**
+     * @param OrderProduct[] $baseOrderProducts
+     * @param OrderProduct[] $extraOrderProducts
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function createProductPrices(Contract $contract, array $baseOrderProducts, array $extraOrderProducts, PriceResult $priceResult, array $extraItems): void
     {
         $priceDetails = $priceResult->getDetails();
         $baseDetails = $priceDetails['base_price'] ?? [];
+        $allocationMap = $this->buildAllocationMap($priceDetails['coupon_allocations'] ?? []);
 
-        $productsBySkuId = $this->buildProductsBySkuIdMapping($orderProducts);
-        $this->processProductPriceDetails($contract, $productsBySkuId, $baseDetails);
+        $productsBySkuId = $this->buildProductsBySkuIdMapping($baseOrderProducts);
+        $this->processProductPriceDetails($contract, $productsBySkuId, $baseDetails, $allocationMap);
+
+        $this->createExtraProductPrices($contract, $extraItems);
     }
 
     /**
@@ -421,28 +525,31 @@ class CheckoutService
      * 处理商品价格详情
      *
      * @param array<string, OrderProduct> $productsBySkuId
-     * @param mixed $baseDetails
+     * @param array<int, array<string, mixed>>|mixed $baseDetails
+     * @param array<string, string> $allocationMap
      */
-    private function processProductPriceDetails(Contract $contract, array $productsBySkuId, mixed $baseDetails): void
+    private function processProductPriceDetails(Contract $contract, array $productsBySkuId, mixed $baseDetails, array $allocationMap): void
     {
         if (!is_array($baseDetails)) {
             return;
         }
 
-        $this->processEachPriceDetail($contract, $productsBySkuId, $baseDetails);
+        $this->processEachPriceDetail($contract, $productsBySkuId, $baseDetails, $allocationMap);
     }
 
     /**
      * 处理每个价格详情
+     *
      * @param array<string, OrderProduct> $productsBySkuId
-     * @param array<mixed> $baseDetails
+     * @param array<int, array<string, mixed>> $baseDetails
+     * @param array<string, string> $allocationMap
      */
-    private function processEachPriceDetail(Contract $contract, array $productsBySkuId, array $baseDetails): void
+    private function processEachPriceDetail(Contract $contract, array $productsBySkuId, array $baseDetails, array $allocationMap): void
     {
         foreach ($baseDetails as $detail) {
             if (is_array($detail)) {
                 /** @var array<string, mixed> $detail */
-                $this->createSingleProductPrice($contract, $productsBySkuId, $detail);
+                $this->createSingleProductPrice($contract, $productsBySkuId, $detail, $allocationMap);
             }
         }
     }
@@ -452,8 +559,9 @@ class CheckoutService
      *
      * @param array<string, OrderProduct> $productsBySkuId
      * @param array<string, mixed> $detail
+     * @param array<string, string> $allocationMap
      */
-    private function createSingleProductPrice(Contract $contract, array $productsBySkuId, array $detail): void
+    private function createSingleProductPrice(Contract $contract, array $productsBySkuId, array $detail, array $allocationMap): void
     {
         $skuId = $this->extractValidSkuId($detail);
         if ('' === $skuId) {
@@ -465,9 +573,79 @@ class CheckoutService
             return;
         }
 
-        $productPrice = $this->buildOrderPrice($contract, $orderProduct, $detail);
-        $contract->addPrice($productPrice);
-        $this->entityManager->persist($productPrice);
+        $allocation = $this->normalizePrice($allocationMap[$skuId] ?? '0.00');
+        $originalTotal = $this->normalizePrice($detail['total_price'] ?? 0);
+        $quantity = isset($detail['quantity']) ? max(1, (int) $detail['quantity']) : 1;
+
+        // 1. 创建销售价格记录（SALE类型）- 记录原始价格
+        $saleDetail = $detail;
+        $saleDetail['total_price'] = $originalTotal;
+        $saleDetail['unit_price'] = bcdiv($originalTotal, sprintf('%.0f', $quantity), 2);
+        
+        $salePrice = $this->buildOrderPrice($contract, $orderProduct, $saleDetail);
+        $contract->addPrice($salePrice);
+        $this->entityManager->persist($salePrice);
+
+        // 2. 如果有优惠券折扣，创建营销价格记录（MARKETING类型）
+        if (bccomp($allocation, '0.00', 2) > 0) {
+            $couponPrice = $this->createCouponDiscountPrice($contract, $orderProduct, $allocation);
+            $contract->addPrice($couponPrice);
+            $this->entityManager->persist($couponPrice);
+        }
+    }
+
+    /**
+     * @param mixed $allocationDetails
+     * @return array<string, string>
+     */
+    private function buildAllocationMap(mixed $allocationDetails): array
+    {
+        if (!is_array($allocationDetails)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($allocationDetails as $allocation) {
+            if (!is_array($allocation)) {
+                continue;
+            }
+
+            $skuId = isset($allocation['sku_id']) ? (string) $allocation['sku_id'] : '';
+            if ('' === $skuId) {
+                continue;
+            }
+
+            $amount = $this->normalizePrice($allocation['amount'] ?? '0.00');
+            if (!isset($map[$skuId])) {
+                $map[$skuId] = '0.00';
+            }
+            $map[$skuId] = bcadd($map[$skuId], $amount, 2);
+        }
+
+        return $map;
+    }
+
+    /**
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function createExtraProductPrices(Contract $contract, array $extraItems): void
+    {
+        foreach ($extraItems as $extra) {
+            $orderProduct = $extra['order_product'] ?? null;
+            if (!$orderProduct instanceof OrderProduct) {
+                continue;
+            }
+
+            $detail = [
+                'sku_id' => $this->couponHelper->resolveOrderProductSkuId($orderProduct),
+                'total_price' => $extra['total_price'] ?? '0.00',
+                'unit_price' => $extra['unit_price'] ?? '0.00',
+            ];
+
+            $productPrice = $this->buildOrderPrice($contract, $orderProduct, $detail);
+            $contract->addPrice($productPrice);
+            $this->entityManager->persist($productPrice);
+        }
     }
 
     /**
@@ -541,15 +719,40 @@ class CheckoutService
     }
 
     /**
+     * 创建优惠券折扣价格记录
+     */
+    private function createCouponDiscountPrice(Contract $contract, OrderProduct $orderProduct, string $discountAmount): OrderPrice
+    {
+        $couponPrice = new OrderPrice();
+        $couponPrice->setContract($contract);
+        $couponPrice->setProduct($orderProduct);
+        $couponPrice->setCurrency('CNY');
+        $couponPrice->setType(PriceType::COUPON_DISCOUNT);
+        $couponPrice->setName('优惠券优惠');
+        
+        // 折扣金额为负数
+        $couponPrice->setMoney('-' . $discountAmount);
+        $couponPrice->setUnitPrice('0.00'); // 折扣没有单价概念
+        $couponPrice->setCanRefund(true);
+        $couponPrice->setPaid(false);
+        $couponPrice->setRefund(false);
+        
+        return $couponPrice;
+    }
+
+    /**
      * 标准化价格格式
+     */
+    /**
+     * @return numeric-string
      */
     private function normalizePrice(mixed $price): string
     {
         if (is_string($price) && is_numeric($price)) {
-            return $price;
+            return sprintf('%.2f', (float) $price);
         }
 
-        return sprintf('%.2f', is_numeric($price) ? $price : 0);
+        return sprintf('%.2f', is_numeric($price) ? (float) $price : 0.0);
     }
 
     /**
@@ -557,6 +760,12 @@ class CheckoutService
      */
     private function createOrderContact(Contract $contract, CalculationContext $context): void
     {
+        // 兑换券订单不需要收货地址
+        $orderType = $context->getMetadataValue('orderType');
+        if ('redeem' === $orderType) {
+            return;
+        }
+
         $address = $this->getValidatedDeliveryAddress($contract, $context);
         $this->createContactFromAddress($contract, $address);
     }
@@ -853,9 +1062,14 @@ class CheckoutService
      * @param CheckoutItem[] $checkoutItems
      * @throws CheckoutException
      */
-    private function performStockValidation(array $checkoutItems): StockValidationResult
+    /**
+     * @param CheckoutItem[] $checkoutItems
+     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
+     */
+    private function performStockValidation(array $checkoutItems, array $extraItems = []): StockValidationResult
     {
-        $stockValidation = $this->stockValidator->validate($checkoutItems);
+        $items = $this->couponHelper->mergeCheckoutItems($checkoutItems, $extraItems);
+        $stockValidation = $this->stockValidator->validate($items);
         if (!$stockValidation->isValid()) {
             throw new CheckoutException('库存验证失败: ' . implode(', ', $stockValidation->getErrors()));
         }

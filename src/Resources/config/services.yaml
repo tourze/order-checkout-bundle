@@ -27,6 +27,7 @@ services:
         calls:
             - ['addCalculator', ['@Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator']]
             - ['addCalculator', ['@Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator']]
+            - ['addCalculator', ['@Tourze\OrderCheckoutBundle\Calculator\CouponCalculator']]
 
     Tourze\OrderCheckoutBundle\Service\BasicStockValidator: ~
 
@@ -37,6 +38,38 @@ services:
     Tourze\OrderCheckoutBundle\Service\ShippingCalculationService: ~
 
     Tourze\OrderCheckoutBundle\Service\BasicAddressResolver: ~
+
+    # 优惠券推荐服务
+    Tourze\OrderCheckoutBundle\Service\CouponRecommendationService:
+        arguments:
+            - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
+            - '@Tourze\CouponCoreBundle\Service\CouponEvaluator'
+            - '@Tourze\ProductServiceContracts\SkuLoaderInterface'
+            - '@logger'
+
+    # 优惠券提供者
+    Tourze\OrderCheckoutBundle\Provider\LocalCouponProvider:
+        arguments:
+            - '@Tourze\CouponCoreBundle\Repository\CodeRepository'
+            - '@Tourze\CouponCoreBundle\Service\CouponVOFactory'
+            - '@doctrine.orm.entity_manager'
+            - '@logger'
+        tags:
+            - { name: 'coupon.provider', priority: 100 }
+
+    # 优惠券提供者责任链
+    Tourze\OrderCheckoutBundle\Provider\CouponProviderChain:
+        arguments:
+            - !tagged_iterator coupon.provider
+            - '@event_dispatcher'
+            - '@logger'
+
+    # 优惠券工作流助手（使用新的Provider链）
+    Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper:
+        arguments:
+            - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
+            - '@Tourze\ProductCoreBundle\Service\SkuServiceInterface'
+            - '@Tourze\CouponCoreBundle\Service\CouponUsageLogger'
 
     Tourze\OrderCheckoutBundle\Service\PaymentService: ~
 
@@ -52,6 +85,8 @@ services:
             - '@OrderCoreBundle\Service\ContractService'
             - '@Tourze\OrderCartBundle\Interface\CartManagerInterface'
             - '@Tourze\StockManageBundle\Service\StockOperator'
+            - '@Tourze\DeliveryAddressBundle\Service\DeliveryAddressService'
+            - '@Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper'
 
     # 价格计算器
     Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator:
@@ -61,6 +96,16 @@ services:
             - order_checkout.price_calculator
 
     Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator:
+        tags:
+            - order_checkout.price_calculator
+
+    # 优惠券计算器（使用新的Provider链）
+    Tourze\OrderCheckoutBundle\Calculator\CouponCalculator:
+        arguments:
+            - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
+            - '@Tourze\CouponCoreBundle\Service\CouponEvaluator'
+            - '@Tourze\ProductServiceContracts\SkuLoaderInterface'
+            - '@logger'
         tags:
             - order_checkout.price_calculator
 
