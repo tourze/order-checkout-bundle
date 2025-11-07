@@ -10,6 +10,7 @@ use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Tourze\BundleDependency\BundleDependencyInterface;
+use Tourze\CouponCoreBundle\CouponCoreBundle;
 use Tourze\DeliveryAddressBundle\DeliveryAddressBundle;
 use Tourze\OrderCartBundle\OrderCartBundle;
 use Tourze\OrderCheckoutBundle\Contract\PriceCalculatorInterface;
@@ -38,6 +39,7 @@ class OrderCheckoutBundle extends Bundle implements BundleDependencyInterface
             ProductCoreBundle::class => ['all' => true],
             OrderCoreBundle::class => ['all' => true],
             StockManageBundle::class => ['all' => true],
+            CouponCoreBundle::class => ['all' => true],
         ];
     }
 }

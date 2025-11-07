@@ -26,7 +26,7 @@ class LocalCouponProvider implements CouponProviderInterface
         private readonly CodeRepository $codeRepository,
         private readonly CouponVOFactory $couponVOFactory,
         private readonly EntityManagerInterface $entityManager,
-        private readonly ?LoggerInterface $logger = null
+        private readonly ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -50,6 +50,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'codeId' => $codeEntity->getId(),
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -66,6 +67,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'code' => $code,
                 'codeId' => $codeEntity->getId(),
             ]);
+
             return false;
         }
 
@@ -81,6 +83,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'code' => $code,
                 'codeId' => $codeEntity->getId(),
             ]);
+
             return true;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券锁定失败', [
@@ -88,6 +91,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'codeId' => $codeEntity->getId(),
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -117,6 +121,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'code' => $code,
                 'codeId' => $codeEntity->getId(),
             ]);
+
             return true;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券解锁失败', [
@@ -124,6 +129,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'codeId' => $codeEntity->getId() ?? 'unknown',
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -138,6 +144,7 @@ class LocalCouponProvider implements CouponProviderInterface
 
         if (null === $codeEntity) {
             $this->logger?->error('核销失败：优惠券不存在', ['code' => $code]);
+
             return false;
         }
 
@@ -146,6 +153,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'code' => $code,
                 'codeId' => $codeEntity->getId(),
             ]);
+
             return false;
         }
 
@@ -171,6 +179,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'codeId' => $codeEntity->getId(),
                 'metadata' => $metadata,
             ]);
+
             return true;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券核销失败', [
@@ -179,6 +188,7 @@ class LocalCouponProvider implements CouponProviderInterface
                 'error' => $e->getMessage(),
                 'metadata' => $metadata,
             ]);
+
             return false;
         }
     }
