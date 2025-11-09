@@ -75,7 +75,6 @@ class PriceCalculationItem
     {
         self::validateCartItem($cartItem);
 
-        /** @phpstan-ignore-next-line */
         $sku = $cartItem->getSku();
         $skuId = self::extractSkuId($sku);
         $quantity = self::extractQuantity($cartItem);
@@ -122,7 +121,6 @@ class PriceCalculationItem
      */
     private static function extractQuantity(object $cartItem): int
     {
-        /** @phpstan-ignore-next-line */
         $quantityValue = $cartItem->getQuantity();
 
         return is_int($quantityValue) ? $quantityValue : 1;

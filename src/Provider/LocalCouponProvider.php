@@ -6,6 +6,7 @@ namespace Tourze\OrderCheckoutBundle\Provider;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\CouponCoreBundle\Entity\Code;
 use Tourze\CouponCoreBundle\Repository\CodeRepository;
@@ -17,6 +18,7 @@ use Tourze\OrderCheckoutBundle\Contract\CouponProviderInterface;
  * 本地优惠券提供者
  * 负责处理数据库中的优惠券Entity
  */
+#[AutoconfigureTag(name: 'coupon.provider')]
 class LocalCouponProvider implements CouponProviderInterface
 {
     /** @var array<string, Code> 临时缓存已锁定的优惠券 */

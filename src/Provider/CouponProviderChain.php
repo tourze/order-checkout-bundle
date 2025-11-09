@@ -24,7 +24,7 @@ class CouponProviderChain
     public function __construct(
         #[TaggedIterator('coupon.provider')] iterable $providers,
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly ?LoggerInterface $logger = null
+        private readonly ?LoggerInterface $logger = null,
     ) {
         foreach ($providers as $provider) {
             $this->addProvider($provider);
@@ -58,6 +58,7 @@ class CouponProviderChain
                         'provider' => $provider->getIdentifier(),
                         'user' => $user->getUserIdentifier(),
                     ]);
+
                     return $vo;
                 }
             } catch (\Throwable $e) {
@@ -78,6 +79,7 @@ class CouponProviderChain
                 'code' => $code,
                 'user' => $user->getUserIdentifier(),
             ]);
+
             return $event->getCouponVO();
         }
 
@@ -85,6 +87,7 @@ class CouponProviderChain
             'code' => $code,
             'user' => $user->getUserIdentifier(),
         ]);
+
         return null;
     }
 
@@ -96,6 +99,7 @@ class CouponProviderChain
         $provider = $this->findSupportingProvider($code);
         if (null === $provider) {
             $this->logger?->warning('无法找到支持的优惠券提供者进行锁定', ['code' => $code]);
+
             return false;
         }
 
@@ -106,6 +110,7 @@ class CouponProviderChain
                 'provider' => $provider->getIdentifier(),
                 'result' => $result,
             ]);
+
             return $result;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券锁定失败', [
@@ -113,6 +118,7 @@ class CouponProviderChain
                 'provider' => $provider->getIdentifier(),
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -125,6 +131,7 @@ class CouponProviderChain
         $provider = $this->findSupportingProvider($code);
         if (null === $provider) {
             $this->logger?->warning('无法找到支持的优惠券提供者进行解锁', ['code' => $code]);
+
             return false;
         }
 
@@ -135,6 +142,7 @@ class CouponProviderChain
                 'provider' => $provider->getIdentifier(),
                 'result' => $result,
             ]);
+
             return $result;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券解锁失败', [
@@ -142,6 +150,7 @@ class CouponProviderChain
                 'provider' => $provider->getIdentifier(),
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -156,6 +165,7 @@ class CouponProviderChain
         $provider = $this->findSupportingProvider($code);
         if (null === $provider) {
             $this->logger?->warning('无法找到支持的优惠券提供者进行核销', ['code' => $code]);
+
             return false;
         }
 
@@ -167,6 +177,7 @@ class CouponProviderChain
                 'result' => $result,
                 'metadata' => $metadata,
             ]);
+
             return $result;
         } catch (\Throwable $e) {
             $this->logger?->error('优惠券核销失败', [
@@ -175,6 +186,7 @@ class CouponProviderChain
                 'error' => $e->getMessage(),
                 'metadata' => $metadata,
             ]);
+
             return false;
         }
     }

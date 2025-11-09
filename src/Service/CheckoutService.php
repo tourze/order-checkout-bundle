@@ -14,7 +14,6 @@ use OrderCoreBundle\Service\ContractService;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\DeliveryAddressBundle\Entity\DeliveryAddress;
 use Tourze\DeliveryAddressBundle\Service\DeliveryAddressService;
-use Tourze\JsonRPC\Core\Exception\ApiException;
 use Tourze\OrderCartBundle\Interface\CartManagerInterface;
 use Tourze\OrderCheckoutBundle\Contract\ShippingCalculatorInterface;
 use Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface;
@@ -26,8 +25,8 @@ use Tourze\OrderCheckoutBundle\DTO\ShippingContext;
 use Tourze\OrderCheckoutBundle\DTO\ShippingResult;
 use Tourze\OrderCheckoutBundle\DTO\StockValidationResult;
 use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
-use Tourze\ProductCoreBundle\Enum\PriceType;
 use Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper;
+use Tourze\ProductCoreBundle\Enum\PriceType;
 use Tourze\StockManageBundle\Service\StockOperator;
 use Tourze\Symfony\AopDoctrineBundle\Attribute\Transactional;
 
@@ -184,6 +183,7 @@ class CheckoutService
         if (!$stockValidation->isValid()) {
             throw new CheckoutException('库存验证失败: ' . implode(', ', $stockValidation->getErrors()));
         }
+
         return $stockValidation;
     }
 
@@ -258,6 +258,7 @@ class CheckoutService
     {
         $contract = $this->createBasicContract($context);
         $this->configureContract($contract, $context, $priceResult);
+
         return $contract;
     }
 
@@ -270,6 +271,7 @@ class CheckoutService
         $contract->setUser($context->getUser());
         $contract->setSn($this->generateOrderNumber());
         $contract->setState(OrderState::INIT);
+
         return $contract;
     }
 
@@ -307,6 +309,7 @@ class CheckoutService
     private function getValidOrderType(CalculationContext $context): string
     {
         $orderType = $context->getMetadataValue('orderType', 'normal');
+
         return is_string($orderType) ? $orderType : 'normal';
     }
 
@@ -387,7 +390,7 @@ class CheckoutService
             $type = $extra['type'] ?? 'coupon';
             $orderProduct->setRemark($this->couponHelper->describeExtraItem($type));
             $orderProduct->setSource($type);
-            $orderProduct->setIsGift(in_array($type,['coupon_gift','coupon_redeem']));
+            $orderProduct->setIsGift(in_array($type, ['coupon_gift', 'coupon_redeem']));
             $contract->addProduct($orderProduct);
             $this->entityManager->persist($orderProduct);
             $extraItems[$index]['order_product'] = $orderProduct;
@@ -408,6 +411,7 @@ class CheckoutService
     {
         $orderProduct = $this->createOrderProductBase($contract, $item);
         $this->setOrderProductDetails($orderProduct, $item);
+
         return $orderProduct;
     }
 
@@ -420,6 +424,7 @@ class CheckoutService
         $orderProduct->setContract($contract);
         $orderProduct->setSku($item->getSku());
         $orderProduct->setValid(true);
+
         return $orderProduct;
     }
 
@@ -478,6 +483,7 @@ class CheckoutService
         $shippingPrice->setCanRefund(true);
         $shippingPrice->setPaid(false);
         $shippingPrice->setRefund(false);
+
         return $shippingPrice;
     }
 
@@ -518,6 +524,7 @@ class CheckoutService
                 $productsBySkuId[(string) $sku->getId()] = $orderProduct;
             }
         }
+
         return $productsBySkuId;
     }
 
@@ -581,7 +588,7 @@ class CheckoutService
         $saleDetail = $detail;
         $saleDetail['total_price'] = $originalTotal;
         $saleDetail['unit_price'] = bcdiv($originalTotal, sprintf('%.0f', $quantity), 2);
-        
+
         $salePrice = $this->buildOrderPrice($contract, $orderProduct, $saleDetail);
         $contract->addPrice($salePrice);
         $this->entityManager->persist($salePrice);
@@ -677,6 +684,7 @@ class CheckoutService
         $productPrice = $this->createOrderPriceBase($contract, $orderProduct);
         $this->setProductPricing($productPrice, $detail);
         $this->setOrderPriceFlags($productPrice);
+
         return $productPrice;
     }
 
@@ -691,6 +699,7 @@ class CheckoutService
         $productPrice->setCurrency('CNY');
         $productPrice->setType(PriceType::SALE);
         $productPrice->setName($orderProduct->getSpuTitle() ?? 'Unknown Product');
+
         return $productPrice;
     }
 
@@ -729,14 +738,14 @@ class CheckoutService
         $couponPrice->setCurrency('CNY');
         $couponPrice->setType(PriceType::COUPON_DISCOUNT);
         $couponPrice->setName('优惠券优惠');
-        
+
         // 折扣金额为负数
         $couponPrice->setMoney('-' . $discountAmount);
         $couponPrice->setUnitPrice('0.00'); // 折扣没有单价概念
         $couponPrice->setCanRefund(true);
         $couponPrice->setPaid(false);
         $couponPrice->setRefund(false);
-        
+
         return $couponPrice;
     }
 
@@ -802,6 +811,7 @@ class CheckoutService
         if (null === $addressId) {
             throw new CheckoutException('收货地址ID不能为空');
         }
+
         return $addressId;
     }
 
@@ -811,6 +821,7 @@ class CheckoutService
         if (null === $user) {
             throw new CheckoutException('订单用户信息无效');
         }
+
         return $user;
     }
 
@@ -834,6 +845,7 @@ class CheckoutService
         if (null === $address) {
             throw new CheckoutException('收货地址无效');
         }
+
         return $address;
     }
 
@@ -871,6 +883,7 @@ class CheckoutService
         $orderContact = $this->createOrderContactBase($contract, $address, $contactInfo);
         $this->setOrderContactRegionInfo($orderContact, $address);
         $orderContact->setGender($address->getGender());
+
         return $orderContact;
     }
 
@@ -887,6 +900,7 @@ class CheckoutService
         $orderContact->setRealname($contactInfo['name']);
         $orderContact->setMobile($contactInfo['phone']);
         $orderContact->setAddress($contactInfo['address']);
+
         return $orderContact;
     }
 
@@ -964,6 +978,7 @@ class CheckoutService
         foreach ($cartItems as $item) {
             $checkoutItems[] = $this->convertSingleItem($item);
         }
+
         return $checkoutItems;
     }
 
@@ -975,7 +990,7 @@ class CheckoutService
         return match (true) {
             is_array($item) => CheckoutItem::fromArray($this->sanitizeArrayItem($item)),
             is_object($item) => CheckoutItem::fromCartItem($item),
-            default => throw new CheckoutException('无效的购物车项目格式')
+            default => throw new CheckoutException('无效的购物车项目格式'),
         };
     }
 
@@ -1011,6 +1026,7 @@ class CheckoutService
         if (isset($item['id']) && is_int($item['id'])) {
             $sanitized['id'] = $item['id'];
         }
+
         return $sanitized;
     }
 
@@ -1025,6 +1041,7 @@ class CheckoutService
         if (isset($item['skuId']) && (is_string($item['skuId']) || is_int($item['skuId']))) {
             $sanitized['skuId'] = $item['skuId'];
         }
+
         return $sanitized;
     }
 
@@ -1039,6 +1056,7 @@ class CheckoutService
         if (isset($item['quantity']) && is_int($item['quantity'])) {
             $sanitized['quantity'] = $item['quantity'];
         }
+
         return $sanitized;
     }
 
@@ -1053,6 +1071,7 @@ class CheckoutService
         if (isset($item['selected']) && is_bool($item['selected'])) {
             $sanitized['selected'] = $item['selected'];
         }
+
         return $sanitized;
     }
 
@@ -1073,6 +1092,7 @@ class CheckoutService
         if (!$stockValidation->isValid()) {
             throw new CheckoutException('库存验证失败: ' . implode(', ', $stockValidation->getErrors()));
         }
+
         return $stockValidation;
     }
 
@@ -1087,7 +1107,7 @@ class CheckoutService
         UserInterface $user,
         array $checkoutItems,
         array $appliedCoupons,
-        array $options
+        array $options,
     ): CalculationContext {
         return new CalculationContext(
             $user,
@@ -1109,6 +1129,7 @@ class CheckoutService
     {
         $region = is_string($options['region'] ?? null) ? $options['region'] : 'default';
         $shippingContext = new ShippingContext($user, $checkoutItems, $region);
+
         return $this->shippingCalculator->calculate($shippingContext);
     }
 
