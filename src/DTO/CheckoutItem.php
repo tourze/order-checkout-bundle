@@ -69,13 +69,14 @@ class CheckoutItem
 
     /**
      * 从 CartItem 实体创建 CheckoutItem
-     * @param object $cartItem
+     * @param object{getSku: callable, getQuantity: callable} $cartItem
      */
     public static function fromCartItem(object $cartItem): self
     {
         self::validateCartItem($cartItem);
 
-        $sku = $cartItem->getSku();
+        /** @var object|null $sku */
+        $sku = method_exists($cartItem, 'getSku') ? $cartItem->getSku() : null;
         $skuId = self::extractSkuId($sku);
         $quantity = self::extractQuantity($cartItem);
         $selected = self::extractSelected($cartItem);
@@ -120,10 +121,12 @@ class CheckoutItem
 
     /**
      * 安全地提取数量
+     * @param object{getQuantity: callable} $cartItem
      */
     private static function extractQuantity(object $cartItem): int
     {
-        $quantity = $cartItem->getQuantity();
+        /** @var mixed $quantity */
+        $quantity = method_exists($cartItem, 'getQuantity') ? $cartItem->getQuantity() : 1;
 
         return is_int($quantity) ? $quantity : 1;
     }

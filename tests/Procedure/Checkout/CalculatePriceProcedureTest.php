@@ -92,10 +92,10 @@ final class CalculatePriceProcedureTest extends AbstractProcedureTestCase
         // 验证 pricing 结构存在必要字段
         $pricing = $result['pricing'];
         $this->assertIsArray($pricing);
-        $this->assertArrayHasKey('basePrice', $pricing);
+        $this->assertArrayHasKey('originalPrice', $pricing);
         $this->assertArrayHasKey('finalPrice', $pricing);
         $this->assertArrayHasKey('savings', $pricing);
-        $this->assertIsFloat($pricing['basePrice']);
+        $this->assertIsFloat($pricing['originalPrice']);
         $this->assertIsFloat($pricing['finalPrice']);
         $this->assertIsFloat($pricing['savings']);
 
@@ -115,6 +115,7 @@ final class CalculatePriceProcedureTest extends AbstractProcedureTestCase
         $user = $this->createNormalUser('test_user_' . uniqid());
         $this->setAuthenticatedUser($user);
 
+        $this->procedure->cartItems = [['id' => 1, 'skuId' => 100, 'quantity' => 2]];
         $this->procedure->addressId = 456;
         $this->procedure->couponCode = 'TEST20';
         $this->procedure->pointsToUse = 200;
@@ -124,10 +125,12 @@ final class CalculatePriceProcedureTest extends AbstractProcedureTestCase
         // Act: 生成缓存键
         $cacheKey = $this->procedure->getCacheKey($request);
 
-        // Assert: 验证缓存键格式
+        // Assert: 验证缓存键格式包含必要组成部分
         $this->assertInstanceOf(UserInterface::class, $user);
-        $expectedKey = 'price_calc:' . $user->getUserIdentifier() . ':456:TEST20:200';
-        $this->assertEquals($expectedKey, $cacheKey);
+        $this->assertStringStartsWith('price_calc:' . $user->getUserIdentifier() . ':', $cacheKey);
+        $this->assertStringContainsString(':456:', $cacheKey);
+        $this->assertStringContainsString(':TEST20:', $cacheKey);
+        $this->assertStringEndsWith(':200', $cacheKey);
     }
 
     public function testGetCacheKeyWithNullValues(): void
@@ -136,6 +139,7 @@ final class CalculatePriceProcedureTest extends AbstractProcedureTestCase
         $user = $this->createNormalUser('test_user_' . uniqid());
         $this->setAuthenticatedUser($user);
 
+        $this->procedure->cartItems = [];
         $this->procedure->addressId = null;
         $this->procedure->couponCode = null;
         $this->procedure->pointsToUse = 0;
@@ -145,22 +149,38 @@ final class CalculatePriceProcedureTest extends AbstractProcedureTestCase
         // Act: 生成缓存键
         $cacheKey = $this->procedure->getCacheKey($request);
 
-        // Assert: 验证缓存键处理空值
+        // Assert: 验证缓存键处理空值，包含购物车哈希
         $this->assertInstanceOf(UserInterface::class, $user);
-        $expectedKey = 'price_calc:' . $user->getUserIdentifier() . ':no_addr:no_coupon:0';
-        $this->assertEquals($expectedKey, $cacheKey);
+        $this->assertStringStartsWith('price_calc:' . $user->getUserIdentifier() . ':', $cacheKey);
+        $this->assertStringContainsString(':no_addr:', $cacheKey);
+        $this->assertStringContainsString(':auto_apply:', $cacheKey);
+        $this->assertStringEndsWith(':0', $cacheKey);
     }
 
     public function testGetCacheDurationReturns120Seconds(): void
     {
-        // Arrange: 创建请求
+        // Arrange: 设置有优惠券的场景
+        $this->procedure->couponCode = 'TEST20';
         $request = $this->createMock(JsonRpcRequest::class);
 
         // Act: 获取缓存时间
         $duration = $this->procedure->getCacheDuration($request);
 
-        // Assert: 验证缓存时间
+        // Assert: 验证有优惠券时缓存时间为120秒
         $this->assertEquals(120, $duration);
+    }
+
+    public function testGetCacheDurationReturns60SecondsForAutoCoupon(): void
+    {
+        // Arrange: 设置无优惠券（自动应用）场景
+        $this->procedure->couponCode = null;
+        $request = $this->createMock(JsonRpcRequest::class);
+
+        // Act: 获取缓存时间
+        $duration = $this->procedure->getCacheDuration($request);
+
+        // Assert: 验证无优惠券时缓存时间为60秒
+        $this->assertEquals(60, $duration);
     }
 
     public function testGetCacheTagsIncludesBasicTags(): void

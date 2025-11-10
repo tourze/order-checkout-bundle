@@ -21,7 +21,7 @@ final class CouponCalculationAggregate
     /** @var array<string, numeric-string> */
     private array $allocationSummary = [];
 
-    /** @var array<int, array{sku_id: int, gtin?: string, quantity: int, name?: string|null}> */
+    /** @var array<int|string, array{sku_id: int|string, gtin?: string, quantity: int, name?: string|null}> */
     private array $giftSummary = [];
 
     /** @var array<string, array{sku_id: string, quantity: int, unit_price: string, name?: string|null}> */

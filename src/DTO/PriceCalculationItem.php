@@ -69,13 +69,14 @@ class PriceCalculationItem
 
     /**
      * 从 CartItem 实体创建 PriceCalculationItem
-     * @param object $cartItem
+     * @param object{getSku: callable, getQuantity: callable} $cartItem
      */
     public static function fromCartItem(object $cartItem): self
     {
         self::validateCartItem($cartItem);
 
-        $sku = $cartItem->getSku();
+        /** @var object|null $sku */
+        $sku = method_exists($cartItem, 'getSku') ? $cartItem->getSku() : null;
         $skuId = self::extractSkuId($sku);
         $quantity = self::extractQuantity($cartItem);
         $selected = self::extractSelected($cartItem);
@@ -118,10 +119,12 @@ class PriceCalculationItem
 
     /**
      * 安全地提取数量
+     * @param object{getQuantity: callable} $cartItem
      */
     private static function extractQuantity(object $cartItem): int
     {
-        $quantityValue = $cartItem->getQuantity();
+        /** @var mixed $quantityValue */
+        $quantityValue = method_exists($cartItem, 'getQuantity') ? $cartItem->getQuantity() : 1;
 
         return is_int($quantityValue) ? $quantityValue : 1;
     }

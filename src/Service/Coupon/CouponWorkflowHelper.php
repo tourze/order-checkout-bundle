@@ -394,7 +394,7 @@ class CouponWorkflowHelper
 
     /**
      * @param int[] $skuIds
-     * @return array<int, Sku>
+     * @return array<int|string, Sku>
      */
     private function loadSkusByIds(array $skuIds): array
     {
@@ -402,21 +402,23 @@ class CouponWorkflowHelper
             return [];
         }
 
-        // SKU 服务根据 ID 查找的方法
-        $skus = $this->skuService->findByIds($skuIds);
-        
+        // SKU 服务根据 ID 查找的方法，转换为字符串数组
+        /** @var string[] $skuIdStrings */
+        $skuIdStrings = array_map('strval', $skuIds);
+        $skus = $this->skuService->findByIds($skuIdStrings);
+
         $map = [];
         foreach ($skus as $sku) {
             if ($sku instanceof Sku) {
                 $skuId = $sku->getId();
-                if ($skuId > 0) {
-                    $map[$skuId] = $sku;
+                if (is_numeric($skuId) && (int)$skuId > 0) {
+                    $map[(int)$skuId] = $sku;
                 }
             }
         }
 
         // 记录未找到的 SKU ID
-        $notFoundSkuIds = array_diff($skuIds, array_keys($map));
+        $notFoundSkuIds = array_diff($skuIds, array_map('intval', array_keys($map)));
         if ([] !== $notFoundSkuIds) {
             error_log('CouponWorkflowHelper: 未找到以下 SKU ID 对应的 SKU: ' . implode(', ', $notFoundSkuIds));
         }
@@ -433,23 +435,9 @@ class CouponWorkflowHelper
         return $sku->getId();
     }
 
-    private function resolveSkuGtin(?Sku $sku): string
-    {
-        if (null === $sku) {
-            return '';
-        }
-
-        $gtin = $sku->getGtin();
-        if (null !== $gtin && '' !== $gtin) {
-            return $gtin;
-        }
-
-        // 降级方案：使用 SKU ID
-        return $this->resolveSkuIdentifier($sku);
-    }
     /**
      * 获取当前已锁定的优惠券码
-     * 
+     *
      * @return string[]
      */
     public function getLockedCoupons(): array
