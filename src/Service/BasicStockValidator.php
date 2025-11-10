@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Service;
 
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface;
 use Tourze\OrderCheckoutBundle\DTO\StockValidationResult;
@@ -15,6 +16,7 @@ use Tourze\StockManageBundle\Service\StockServiceInterface;
  * 基础库存验证器
  * 这是一个简单的实现，实际项目中应该对接真实的库存系统
  */
+#[WithMonologChannel(channel: 'order_checkout')]
 readonly class BasicStockValidator implements StockValidatorInterface
 {
     public function __construct(

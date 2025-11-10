@@ -13,7 +13,6 @@ use Tourze\CouponCoreBundle\Service\CouponEvaluator;
 use Tourze\CouponCoreBundle\ValueObject\CouponEvaluationContext;
 use Tourze\CouponCoreBundle\ValueObject\CouponOrderItem;
 use Tourze\CouponCoreBundle\ValueObject\CouponVO;
-use Tourze\CouponCoreBundle\ValueObject\FullGiftTier;
 use Tourze\JsonRPC\Core\Attribute\MethodDoc;
 use Tourze\JsonRPC\Core\Attribute\MethodExpose;
 use Tourze\JsonRPC\Core\Attribute\MethodParam;
@@ -23,6 +22,7 @@ use Tourze\JsonRPC\Core\Model\JsonRpcRequest;
 use Tourze\JsonRPC\Core\Procedure\BaseProcedure;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
+use Tourze\OrderCheckoutBundle\DTO\PriceResult;
 use Tourze\OrderCheckoutBundle\DTO\RecommendedCoupon;
 use Tourze\OrderCheckoutBundle\Exception\PriceCalculationException;
 use Tourze\OrderCheckoutBundle\Provider\CouponProviderChain;
@@ -67,23 +67,63 @@ class CalculatePriceProcedure extends BaseProcedure
 
     public function execute(): array
     {
+        $user = $this->validateUser();
+        $this->validateCartAndCoupon();
+
+        $checkoutItems = $this->convertCartItemsToCheckoutItems();
+        $allAvailableCoupons = $this->fetchAvailableCoupons($user, $checkoutItems);
+        $autoAppliedCoupon = $this->applyAutoCouponIfNeeded($user, $allAvailableCoupons);
+
+        $context = $this->buildFinalCalculationContext($user, $checkoutItems);
+
+        try {
+            $priceResult = $this->priceCalculationService->calculate($context);
+            return $this->buildCalculationResult($priceResult, $autoAppliedCoupon, $allAvailableCoupons, $context);
+        } catch (PriceCalculationException $e) {
+            throw new ApiException($e->getMessage());
+        }
+    }
+
+    private function validateUser(): UserInterface
+    {
         $user = $this->security->getUser();
         if (!$user instanceof UserInterface) {
             throw new ApiException('用户未登录或类型错误');
         }
 
-        // 允许空购物车用于纯兑换场景
+        return $user;
+    }
+
+    private function validateCartAndCoupon(): void
+    {
         if ([] === $this->cartItems && null === $this->couponCode) {
             throw new ApiException('购物车中没有选中的商品，且未提供优惠券');
         }
+    }
 
-        // 转换数组数据为 CheckoutItem 对象
+    /**
+     * @return CheckoutItem[]
+     */
+    private function convertCartItemsToCheckoutItems(): array
+    {
         $checkoutItems = [];
         foreach ($this->cartItems as $item) {
             $checkoutItems[] = CheckoutItem::fromArray($item);
         }
 
-        // 【新增】先获取所有可用优惠券（不包含优惠券的临时上下文）
+        return $checkoutItems;
+    }
+
+    /**
+     * @param CheckoutItem[] $checkoutItems
+     * @return RecommendedCoupon[]
+     */
+    private function fetchAvailableCoupons(UserInterface $user, array $checkoutItems): array
+    {
+        if ($this->useCoupon !== true) {
+            return [];
+        }
+
         $tempContext = new CalculationContext(
             $user,
             $checkoutItems,
@@ -91,82 +131,92 @@ class CalculatePriceProcedure extends BaseProcedure
             [
                 'addressId' => $this->addressId,
                 'pointsToUse' => $this->pointsToUse,
-                'orderType' => 'normal', // 临时上下文使用正常模式
+                'orderType' => 'normal',
             ]
         );
-        $allAvailableCoupons = [];
-        if ($this->useCoupon === true){
-            $allAvailableCoupons = $this->getAllAvailableCoupons($tempContext);
+
+        return $this->getAllAvailableCoupons($tempContext);
+    }
+
+    /**
+     * @param RecommendedCoupon[] $allAvailableCoupons
+     */
+    private function applyAutoCouponIfNeeded(UserInterface $user, array $allAvailableCoupons): ?string
+    {
+        if (null !== $this->couponCode || [] === $allAvailableCoupons) {
+            return null;
         }
 
-        // 【新增】自动应用优惠券逻辑
-        $originalCouponCode = $this->couponCode;
-        $autoAppliedCoupon = null;
+        $autoAppliedCoupon = $allAvailableCoupons[0]->getCode();
+        $this->couponCode = $autoAppliedCoupon;
+        $this->logger->info('自动应用优惠券', [
+            'couponCode' => $autoAppliedCoupon,
+            'user' => $user->getUserIdentifier(),
+            'availableCount' => count($allAvailableCoupons),
+        ]);
 
-        if (null === $this->couponCode && [] !== $allAvailableCoupons) {
-            $autoAppliedCoupon = $allAvailableCoupons[0]->getCode();
-            $this->couponCode = $autoAppliedCoupon;
-            $this->logger->info('自动应用优惠券', [
-                'couponCode' => $autoAppliedCoupon,
-                'user' => $user->getUserIdentifier(),
-                'availableCount' => count($allAvailableCoupons),
-            ]);
-        }
+        return $autoAppliedCoupon;
+    }
 
-        // 构建最终计算上下文
+    /**
+     * @param CheckoutItem[] $checkoutItems
+     */
+    private function buildFinalCalculationContext(UserInterface $user, array $checkoutItems): CalculationContext
+    {
         $appliedCoupons = null !== $this->couponCode ? [$this->couponCode] : [];
-        
-        // 检测是否为纯兑换券场景
         $isRedeemOnlyOrder = [] === $this->cartItems && null !== $this->couponCode;
-        
-        $context = new CalculationContext(
+
+        return new CalculationContext(
             $user,
             $checkoutItems,
             $appliedCoupons,
             [
                 'addressId' => $this->addressId,
                 'pointsToUse' => $this->pointsToUse,
-                'orderType' => $isRedeemOnlyOrder ? 'redeem' : 'normal', // 添加订单类型标识
+                'orderType' => $isRedeemOnlyOrder ? 'redeem' : 'normal',
             ]
         );
+    }
 
-        try {
-            $priceResult = $this->priceCalculationService->calculate($context);
+    /**
+     * @param RecommendedCoupon[] $allAvailableCoupons
+     * @return array<string, mixed>
+     */
+    private function buildCalculationResult(
+        PriceResult $priceResult,
+        ?string $autoAppliedCoupon,
+        array $allAvailableCoupons,
+        CalculationContext $context
+    ): array {
+        $result = [
+            'pricing' => [
+                'originalPrice' => $priceResult->getOriginalPrice(),
+                'finalPrice' => $priceResult->getFinalPrice(),
+                'totalDiscount' => $priceResult->getDiscount(),
+                'promotionDiscount' => $priceResult->getDetail('promotion_discount', 0.0),
+                'couponDiscount' => $priceResult->getDetail('coupon_discount', 0.0),
+                'pointsDiscount' => $priceResult->getDetail('points_discount', 0.0),
+                'shippingFee' => $priceResult->getDetail('shipping_fee', 0.0),
+                'savings' => $priceResult->getDiscount(),
+            ],
+            'products' => $priceResult->getProducts(),
+            'breakdown' => $priceResult->getDetails(),
+            'appliedPromotions' => $priceResult->getDetail('applied_promotions', []),
+            'items' => $this->cartItems,
+        ];
 
-            $result = [
-                'pricing' => [
-                    'originalPrice' => $priceResult->getOriginalPrice(),
-                    'finalPrice' => $priceResult->getFinalPrice(),
-                    'totalDiscount' => $priceResult->getDiscount(),
-                    'promotionDiscount' => $priceResult->getDetail('promotion_discount', 0.0),
-                    'couponDiscount' => $priceResult->getDetail('coupon_discount', 0.0),
-                    'pointsDiscount' => $priceResult->getDetail('points_discount', 0.0),
-                    'shippingFee' => $priceResult->getDetail('shipping_fee', 0.0),
-                    'savings' => $priceResult->getDiscount(),
-                ],
-                'products' => $priceResult->getProducts(),
-                'breakdown' => $priceResult->getDetails(),
-                'appliedPromotions' => $priceResult->getDetail('applied_promotions', []),
-                'items' => $this->cartItems,
-            ];
+        $result['couponInfo'] = [
+            'appliedCouponCode' => $this->couponCode,
+            'originalCouponCode' => $this->couponCode,
+            'autoAppliedCoupon' => $autoAppliedCoupon,
+            'hasAutoApplied' => null !== $autoAppliedCoupon,
+            'userSelectedCoupon' => null === $autoAppliedCoupon && null !== $this->couponCode,
+            'appliedCoupon' => $this->getAppliedCouponDetails($this->couponCode, $allAvailableCoupons, $context),
+        ];
 
-            // 【新增】优惠券信息
-            $result['couponInfo'] = [
-                'appliedCouponCode' => $this->couponCode,
-                'originalCouponCode' => $originalCouponCode,
-                'autoAppliedCoupon' => $autoAppliedCoupon,
-                'hasAutoApplied' => null !== $autoAppliedCoupon,
-                'userSelectedCoupon' => null !== $originalCouponCode,
-                'appliedCoupon' => $this->getAppliedCouponDetails($this->couponCode, $allAvailableCoupons, $context),
-            ];
+        $result['availableCoupons'] = $this->enrichCouponsWithGiftInfo($allAvailableCoupons, $context, $autoAppliedCoupon);
 
-            // 【新增】所有可用优惠券（标识状态 + 赠品信息）
-            $result['availableCoupons'] = $this->enrichCouponsWithGiftInfo($allAvailableCoupons, $context, $autoAppliedCoupon);
-
-            return $result;
-        } catch (PriceCalculationException $e) {
-            throw new ApiException($e->getMessage());
-        }
+        return $result;
     }
 
     public function getCacheKey(JsonRpcRequest $request): string

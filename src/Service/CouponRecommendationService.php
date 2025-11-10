@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Service;
 
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\CouponCoreBundle\Exception\CouponEvaluationException;
@@ -22,6 +23,7 @@ use Tourze\ProductServiceContracts\SkuLoaderInterface;
  * 优惠券推荐服务
  * 负责获取用户可用优惠券并根据购物车内容进行筛选和排序
  */
+#[WithMonologChannel(channel: 'order_checkout')]
 class CouponRecommendationService
 {
     public function __construct(

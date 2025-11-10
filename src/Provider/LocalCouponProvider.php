@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tourze\OrderCheckoutBundle\Provider;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -19,6 +20,7 @@ use Tourze\OrderCheckoutBundle\Contract\CouponProviderInterface;
  * 负责处理数据库中的优惠券Entity
  */
 #[AutoconfigureTag(name: 'coupon.provider')]
+#[WithMonologChannel(channel: 'order_checkout')]
 class LocalCouponProvider implements CouponProviderInterface
 {
     /** @var array<string, Code> 临时缓存已锁定的优惠券 */

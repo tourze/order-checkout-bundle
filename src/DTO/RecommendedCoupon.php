@@ -171,13 +171,14 @@ class RecommendedCoupon
         };
     }
 
-    public function getThirdType($type): int
+    public function getThirdType(string $type): int
     {
         return match ($type) {
             'full_reduction' => 0,
             'buy_gift' => 10,
             'full_gift' => 9,
             'redeem' => 6,
+            default => 0,
         };
     }
 
@@ -188,22 +189,23 @@ class RecommendedCoupon
     {
         $minAmount = $this->conditions['min_amount'] ?? 0;
         $maxAmount = $this->conditions['max_amount'] ?? null;
-        
+
         $parts = [];
-        
+
         if ($minAmount > 0) {
-            $parts[] = sprintf('满¥%.2f可用', $minAmount);
-        }
-        
-        if (null !== $maxAmount && $maxAmount > 0) {
-            $parts[] = sprintf('最多优惠¥%.2f', $maxAmount);
+            $parts[] = sprintf('满¥%.2f可用', (float) $minAmount);
         }
 
+        if (null !== $maxAmount && $maxAmount > 0) {
+            $parts[] = sprintf('最多优惠¥%.2f', (float) $maxAmount);
+        }
+
+        /** @var array<string, mixed> $applicableProducts */
         $applicableProducts = $this->conditions['applicable_products'] ?? [];
-        if (isset($applicableProducts['type']) && 'all' !== $applicableProducts['type']) {
+        if (is_array($applicableProducts) && isset($applicableProducts['type']) && 'all' !== $applicableProducts['type']) {
             $parts[] = '限指定商品';
         }
-        
+
         return implode('，', $parts);
     }
 

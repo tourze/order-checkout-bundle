@@ -58,6 +58,8 @@ services:
 
   Tourze\OrderCheckoutBundle\Service\PaymentService: ~
 
+  Tourze\OrderCheckoutBundle\Service\MoneyCalculator: ~
+
   Tourze\OrderCheckoutBundle\Calculator\BasicShippingCalculator: ~
 
   Tourze\OrderCheckoutBundle\Service\CheckoutService:
