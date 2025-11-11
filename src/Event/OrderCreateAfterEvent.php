@@ -11,7 +11,7 @@ use Symfony\Contracts\EventDispatcher\Event;
  * 订单完成事件
  * 在ProcessCheckoutProcedure成功完成下单后分发
  */
-class OrderCompletedEvent extends Event
+class OrderCreateAfterEvent extends Event
 {
     public function __construct(
         private readonly int $orderId,

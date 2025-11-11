@@ -63,12 +63,12 @@ $event->getOrderRemark()    // 获取订单备注
 <?php
 
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
-use Tourze\OrderCheckoutBundle\Event\OrderCompletedEvent;
+use Tourze\OrderCheckoutBundle\Event\OrderCreateAfterEvent;
 
-#[AsEventListener(event: OrderCompletedEvent::class)]
+#[AsEventListener(event: OrderCreateAfterEvent::class)]
 class MyOrderCompletedEventListener
 {
-    public function __invoke(OrderCompletedEvent $event): void
+    public function __invoke(OrderCreateAfterEvent $event): void
     {
         // 获取订单基本信息
         $orderId = $event->getOrderId();
@@ -95,12 +95,12 @@ class MyOrderCompletedEventListener
         }
     }
     
-    private function handleRedeemOrder(OrderCompletedEvent $event): void
+    private function handleRedeemOrder(OrderCreateAfterEvent $event): void
     {
         // 兑换券订单处理逻辑
     }
     
-    private function handleNormalOrder(OrderCompletedEvent $event): void
+    private function handleNormalOrder(OrderCreateAfterEvent $event): void
     {
         // 正常订单处理逻辑
     }

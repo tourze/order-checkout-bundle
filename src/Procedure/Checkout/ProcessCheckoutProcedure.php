@@ -22,7 +22,7 @@ use Tourze\JsonRPCLogBundle\Attribute\Log;
 use Tourze\OrderCartBundle\Interface\CartDataProviderInterface;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
-use Tourze\OrderCheckoutBundle\Event\OrderCompletedEvent;
+use Tourze\OrderCheckoutBundle\Event\OrderCreateAfterEvent;
 use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\Service\CheckoutService;
 use Tourze\ProductCoreBundle\Entity\Sku;
@@ -57,6 +57,18 @@ class ProcessCheckoutProcedure extends LockableProcedure
     #[MethodParam(description: '订单备注')]
     #[Assert\Length(max: 500)]
     public ?string $orderRemark = null;
+
+    #[MethodParam(description: '触达分销员ID')]
+    #[Assert\Positive(message: '触达分销员ID必须大于0')]
+    public ?int $referralDistributorId = null;
+
+    #[MethodParam(description: '触达来源（示例：scan_qrcode）')]
+    #[Assert\Length(max: 32)]
+    public ?string $referralSource = null;
+
+    #[MethodParam(description: '触达追踪码')]
+    #[Assert\Length(max: 64)]
+    public ?string $referralTrackCode = null;
 
     public function __construct(
         private readonly Security $security,
@@ -283,8 +295,16 @@ class ProcessCheckoutProcedure extends LockableProcedure
             'fromCart' => $this->fromCart,
         ];
 
+        if (null !== $this->referralDistributorId) {
+            $metadata['referral'] = [
+                'distributorId' => $this->referralDistributorId,
+                'source' => $this->referralSource ?? 'scan_qrcode',
+                'trackCode' => $this->referralTrackCode,
+            ];
+        }
+
         // 创建并分发事件
-        $event = new OrderCompletedEvent(
+        $event = new OrderCreateAfterEvent(
             orderId: $checkoutResult->getOrderId(),
             orderNumber: $checkoutResult->getOrderNumber(),
             user: $user,
