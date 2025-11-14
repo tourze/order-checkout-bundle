@@ -11,6 +11,7 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Bundle\SecurityBundle\SecurityBundle;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Tourze\BundleDependency\BundleDependencyInterface;
+use Tourze\CouponCoreBundle\CouponCoreBundle;
 use Tourze\DeliveryAddressBundle\DeliveryAddressBundle;
 use Tourze\OrderCartBundle\OrderCartBundle;
 use Tourze\OrderCheckoutBundle\OrderCheckoutBundle;
@@ -59,7 +60,7 @@ final class OrderCheckoutBundleTest extends AbstractBundleTestCase
 
         // Assert: 验证依赖配置
         $this->assertIsArray($dependencies);
-        $this->assertCount(7, $dependencies);
+        $this->assertCount(8, $dependencies);
 
         // 验证SecurityBundle依赖
         $this->assertArrayHasKey(SecurityBundle::class, $dependencies);
@@ -88,6 +89,10 @@ final class OrderCheckoutBundleTest extends AbstractBundleTestCase
         // 验证StockManageBundle依赖
         $this->assertArrayHasKey(StockManageBundle::class, $dependencies);
         $this->assertEquals(['all' => true], $dependencies[StockManageBundle::class]);
+
+        // 验证CouponCoreBundle依赖
+        $this->assertArrayHasKey(CouponCoreBundle::class, $dependencies);
+        $this->assertEquals(['all' => true], $dependencies[CouponCoreBundle::class]);
     }
 
     public function testBundleDependenciesAllHaveAllEnvironmentEnabled(): void
@@ -117,6 +122,7 @@ final class OrderCheckoutBundleTest extends AbstractBundleTestCase
             ProductCoreBundle::class,
             OrderCoreBundle::class,
             StockManageBundle::class,
+            CouponCoreBundle::class,
         ];
 
         foreach ($requiredBundles as $requiredBundle) {

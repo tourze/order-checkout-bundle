@@ -9,6 +9,7 @@ use OrderCoreBundle\Entity\Contract;
 use OrderCoreBundle\Service\ContractService;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\CouponCoreBundle\Entity\Code;
 use Tourze\CouponCoreBundle\Entity\Coupon;
@@ -55,8 +56,9 @@ final class CheckoutServiceCouponTest extends TestCase
         $deliveryService = $this->createMock(DeliveryAddressService::class);
         $couponProviderChain = $this->createMock(CouponProviderChain::class);
         $usageLogger = $this->createMock(CouponUsageLogger::class);
+        $logger = $this->createMock(LoggerInterface::class);
 
-        $couponHelper = new CouponWorkflowHelper($couponProviderChain, $skuService, $usageLogger);
+        $couponHelper = new CouponWorkflowHelper($couponProviderChain, $skuService, $usageLogger, $logger);
 
         $service = new CheckoutService(
             $priceCalculationService,
@@ -160,11 +162,16 @@ final class CheckoutServiceCouponTest extends TestCase
             ->method('logUsage')
             ->with('CODE123', 'full_reduction', 'user-1', self::anything(), self::anything(), '10.00', self::anything(), self::anything());
 
-        $entityManager->method('persist')->willReturnCallback(static function (object $entity): void {
+        $entityManager->method('persist')->willReturnCallback(static function (object $entity) use ($user): void {
             if ($entity instanceof Contract) {
                 $reflection = new \ReflectionProperty($entity, 'id');
                 $reflection->setAccessible(true);
                 $reflection->setValue($entity, 1);
+
+                // 设置 user 属性以避免 redeemCouponCodes 中的 null 检查失败
+                $userReflection = new \ReflectionProperty($entity, 'user');
+                $userReflection->setAccessible(true);
+                $userReflection->setValue($entity, $user);
             }
         });
 
