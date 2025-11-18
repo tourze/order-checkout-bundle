@@ -15,7 +15,7 @@ use Tourze\CouponCoreBundle\Entity\Code;
 use Tourze\CouponCoreBundle\Entity\Coupon;
 use Tourze\CouponCoreBundle\Enum\CouponType;
 use Tourze\CouponCoreBundle\Service\CouponService;
-use Tourze\CouponCoreBundle\Service\CouponUsageLogger;
+use Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger;
 use Tourze\DeliveryAddressBundle\Entity\DeliveryAddress;
 use Tourze\DeliveryAddressBundle\Service\DeliveryAddressService;
 use Tourze\OrderCartBundle\Interface\CartManagerInterface;

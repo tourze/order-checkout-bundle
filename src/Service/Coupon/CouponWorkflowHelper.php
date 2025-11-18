@@ -6,7 +6,7 @@ namespace Tourze\OrderCheckoutBundle\Service\Coupon;
 
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Tourze\CouponCoreBundle\Service\CouponUsageLogger;
+use Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
 use Tourze\OrderCheckoutBundle\DTO\PriceResult;

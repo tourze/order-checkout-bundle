@@ -20,6 +20,17 @@ services:
       - '@doctrine'
     tags:
       - doctrine.repository_service
+  Tourze\OrderCheckoutBundle\Repository\CouponUsageLogRepository:
+    arguments:
+      - '@doctrine'
+    tags:
+      - doctrine.repository_service
+
+  Tourze\OrderCheckoutBundle\Repository\CouponAllocationDetailRepository:
+    arguments:
+      - '@doctrine'
+    tags:
+      - doctrine.repository_service
 
   Tourze\OrderCheckoutBundle\Provider\:
     resource: '../../Provider/'
@@ -54,7 +65,9 @@ services:
     arguments:
       - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
       - '@Tourze\ProductCoreBundle\Service\SkuServiceInterface'
-      - '@Tourze\CouponCoreBundle\Service\CouponUsageLogger'
+      - '@Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger'
+
+  Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger: ~
 
   Tourze\OrderCheckoutBundle\Service\PaymentService: ~
 

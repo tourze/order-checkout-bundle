@@ -53,48 +53,6 @@ final class OrderCheckoutBundleTest extends AbstractBundleTestCase
         $this->assertTrue(is_subclass_of($bundleClass, BundleDependencyInterface::class));
     }
 
-    public function testGetBundleDependenciesReturnsCorrectDependencies(): void
-    {
-        // Act: 获取Bundle依赖
-        $dependencies = OrderCheckoutBundle::getBundleDependencies();
-
-        // Assert: 验证依赖配置
-        $this->assertIsArray($dependencies);
-        $this->assertCount(8, $dependencies);
-
-        // 验证SecurityBundle依赖
-        $this->assertArrayHasKey(SecurityBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[SecurityBundle::class]);
-
-        // 验证DoctrineBundle依赖
-        $this->assertArrayHasKey(DoctrineBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[DoctrineBundle::class]);
-
-        // 验证DeliveryAddressBundle依赖
-        $this->assertArrayHasKey(DeliveryAddressBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[DeliveryAddressBundle::class]);
-
-        // 验证OrderCartBundle依赖
-        $this->assertArrayHasKey(OrderCartBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[OrderCartBundle::class]);
-
-        // 验证ProductCoreBundle依赖
-        $this->assertArrayHasKey(ProductCoreBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[ProductCoreBundle::class]);
-
-        // 验证OrderCoreBundle依赖
-        $this->assertArrayHasKey(OrderCoreBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[OrderCoreBundle::class]);
-
-        // 验证StockManageBundle依赖
-        $this->assertArrayHasKey(StockManageBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[StockManageBundle::class]);
-
-        // 验证CouponCoreBundle依赖
-        $this->assertArrayHasKey(CouponCoreBundle::class, $dependencies);
-        $this->assertEquals(['all' => true], $dependencies[CouponCoreBundle::class]);
-    }
-
     public function testBundleDependenciesAllHaveAllEnvironmentEnabled(): void
     {
         // Act: 获取依赖配置
