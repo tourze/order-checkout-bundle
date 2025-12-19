@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Tests\Service;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Tourze\OrderCheckoutBundle\Service\MoneyCalculator;
 
+#[CoversClass(MoneyCalculator::class)]
 class MoneyCalculatorTest extends TestCase
 {
     public function testAdd(): void

@@ -26,6 +26,7 @@ final class ShippingTemplateTest extends AbstractEntityTestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->template = new ShippingTemplate();
     }
 

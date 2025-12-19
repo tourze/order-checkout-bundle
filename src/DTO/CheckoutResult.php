@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 结算结果
  */
-class CheckoutResult
+final class CheckoutResult
 {
     /**
      * @param array<mixed> $items            购物车商品

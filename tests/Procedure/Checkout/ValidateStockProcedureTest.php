@@ -9,8 +9,9 @@ use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\JsonRPC\Core\Exception\ApiException;
 use Tourze\JsonRPC\Core\Model\JsonRpcRequest;
-use Tourze\JsonRPC\Core\Tests\AbstractProcedureTestCase;
+use Tourze\OrderCheckoutBundle\Param\Checkout\ValidateStockParam;
 use Tourze\OrderCheckoutBundle\Procedure\Checkout\ValidateStockProcedure;
+use Tourze\PHPUnitJsonRPC\AbstractProcedureTestCase;
 
 /**
  * @internal
@@ -20,6 +21,14 @@ use Tourze\OrderCheckoutBundle\Procedure\Checkout\ValidateStockProcedure;
 final class ValidateStockProcedureTest extends AbstractProcedureTestCase
 {
     private ValidateStockProcedure $procedure;
+
+    private function createJsonRpcRequest(): JsonRpcRequest
+    {
+        $request = new JsonRpcRequest();
+        $request->setMethod('test');
+
+        return $request;
+    }
 
     protected function onSetUp(): void
     {
@@ -32,7 +41,8 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('用户未登录或类型错误');
 
-        $this->procedure->execute();
+        $param = new ValidateStockParam();
+        $this->procedure->execute($param);
     }
 
     public function testGetCacheKeyGeneratesCorrectKey(): void
@@ -41,7 +51,7 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
         $user = $this->createNormalUser('test_user_' . uniqid());
         $this->setAuthenticatedUser($user);
 
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
 
         // Act: 生成缓存键
         $cacheKey = $this->procedure->getCacheKey($request);
@@ -57,7 +67,7 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
     public function testGetCacheKeyThrowsExceptionWhenUserNotLoggedIn(): void
     {
         // Arrange: 设置未登录状态
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
 
         // Act & Assert: 验证异常
         $this->expectException(ApiException::class);
@@ -69,7 +79,7 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
     public function testGetCacheDurationReturns30Seconds(): void
     {
         // Arrange: 创建请求
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
 
         // Act: 获取缓存时间
         $duration = $this->procedure->getCacheDuration($request);
@@ -84,7 +94,7 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
         $user = $this->createNormalUser('test_user_' . uniqid());
         $this->setAuthenticatedUser($user);
 
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
 
         // Act: 获取缓存标签
         $tags = iterator_to_array($this->procedure->getCacheTags($request));
@@ -100,7 +110,7 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
     public function testGetCacheTagsThrowsExceptionWhenUserNotLoggedIn(): void
     {
         // Arrange: 设置未登录状态
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
 
         // Act & Assert: 验证异常
         $this->expectException(ApiException::class);
@@ -109,76 +119,4 @@ final class ValidateStockProcedureTest extends AbstractProcedureTestCase
         iterator_to_array($this->procedure->getCacheTags($request));
     }
 
-    public function testGetMockResultReturnsValidStructure(): void
-    {
-        // Act: 获取Mock结果
-        $mockResult = ValidateStockProcedure::getMockResult();
-
-        // Assert: 验证Mock结果结构
-        $this->assertIsArray($mockResult);
-        $this->assertArrayHasKey('isValid', $mockResult);
-        $this->assertArrayHasKey('hasWarnings', $mockResult);
-        $this->assertArrayHasKey('errors', $mockResult);
-        $this->assertArrayHasKey('warnings', $mockResult);
-        $this->assertArrayHasKey('details', $mockResult);
-        $this->assertArrayHasKey('summary', $mockResult);
-
-        // 验证基本数据类型
-        $this->assertIsBool($mockResult['isValid']);
-        $this->assertIsBool($mockResult['hasWarnings']);
-        $this->assertIsArray($mockResult['errors']);
-        $this->assertIsArray($mockResult['warnings']);
-        $this->assertIsArray($mockResult['details']);
-        $this->assertIsArray($mockResult['summary']);
-
-        // 验证摘要信息结构
-        $summary = $mockResult['summary'];
-        $this->assertArrayHasKey('totalItems', $summary);
-        $this->assertArrayHasKey('validItems', $summary);
-        $this->assertArrayHasKey('invalidItems', $summary);
-        $this->assertArrayHasKey('warningItems', $summary);
-
-        // 验证摘要数据类型
-        $this->assertIsInt($summary['totalItems']);
-        $this->assertIsInt($summary['validItems']);
-        $this->assertIsInt($summary['invalidItems']);
-        $this->assertIsInt($summary['warningItems']);
-    }
-
-    public function testMockResultShowsRealisticStockScenario(): void
-    {
-        // Act: 获取Mock结果
-        $mockResult = ValidateStockProcedure::getMockResult();
-
-        // Assert: 验证Mock结果反映真实的库存验证场景
-        $this->assertIsArray($mockResult);
-        $this->assertArrayHasKey('isValid', $mockResult);
-        $this->assertFalse($mockResult['isValid']); // 有库存问题
-        $this->assertTrue($mockResult['hasWarnings']); // 有警告
-        $this->assertNotEmpty($mockResult['errors']); // 有错误
-        $this->assertNotEmpty($mockResult['warnings']); // 有警告
-
-        // 验证错误和警告的内容格式
-        $this->assertIsArray($mockResult['errors']);
-        foreach ($mockResult['errors'] as $error) {
-            $this->assertIsString($error);
-            $this->assertStringContainsString('库存不足', $error);
-        }
-
-        $this->assertIsArray($mockResult['warnings']);
-        foreach ($mockResult['warnings'] as $warning) {
-            $this->assertIsString($warning);
-            $this->assertStringContainsString('库存较少', $warning);
-        }
-
-        // 验证详情信息的结构
-        $this->assertIsArray($mockResult['details']);
-        foreach ($mockResult['details'] as $detail) {
-            $this->assertIsArray($detail);
-            $this->assertArrayHasKey('sku_code', $detail);
-            $this->assertArrayHasKey('sku_name', $detail);
-            $this->assertArrayHasKey('requested_quantity', $detail);
-            $this->assertArrayHasKey('available_quantity', $detail);
-        }
-    }
 }

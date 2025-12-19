@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 促销匹配结果
  */
-class PromotionResult
+final class PromotionResult
 {
     /**
      * @param array<string, mixed> $promotions 匹配到的促销活动

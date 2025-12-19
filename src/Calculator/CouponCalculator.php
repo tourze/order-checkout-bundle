@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Calculator;
 
+use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use Tourze\CouponCoreBundle\Exception\CouponEvaluationException;
 use Tourze\CouponCoreBundle\Service\CouponEvaluator;
 use Tourze\CouponCoreBundle\ValueObject\CouponEvaluationContext;
 use Tourze\CouponCoreBundle\ValueObject\CouponOrderItem;
 use Tourze\OrderCheckoutBundle\Contract\PriceCalculatorInterface;
+use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
 use Tourze\OrderCheckoutBundle\DTO\PriceResult;
@@ -20,13 +23,15 @@ use Tourze\ProductServiceContracts\SkuLoaderInterface;
 /**
  * 优惠券计算器
  */
-class CouponCalculator implements PriceCalculatorInterface
+#[AutoconfigureTag(name: 'order_checkout.price_calculator')]
+#[WithMonologChannel(channel: 'order_checkout')]
+readonly class CouponCalculator implements PriceCalculatorInterface
 {
     public function __construct(
-        private readonly CouponProviderChain $providerChain,
-        private readonly CouponEvaluator $couponEvaluator,
-        private readonly SkuLoaderInterface $skuLoader,
-        private readonly ?LoggerInterface $logger = null,
+        private CouponProviderChain $providerChain,
+        private CouponEvaluator $couponEvaluator,
+        private SkuLoaderInterface $skuLoader,
+        private ?LoggerInterface $logger = null,
     ) {
     }
 
@@ -38,8 +43,8 @@ class CouponCalculator implements PriceCalculatorInterface
         }
 
         $orderItems = $this->buildOrderItems($context);
-        $isRedeemOnlyOrder = $context->getMetadataValue('orderType') === 'redeem';
-        
+        $isRedeemOnlyOrder = 'redeem' === $context->getMetadataValue('orderType');
+
         // 纯兑换券场景：即使没有基础商品也要进行计算
         if ([] === $orderItems && !$isRedeemOnlyOrder) {
             return PriceResult::empty();
@@ -67,7 +72,7 @@ class CouponCalculator implements PriceCalculatorInterface
 
         // 计算最终价格：普通场景返回负值，纯兑换券场景返回0
         $finalPrice = bcsub('0.00', $totalDiscount, 2); // 0 - 折扣 = 负值
-        
+
         // 只有在纯兑换券场景下才将负值改为0
         if ($isRedeemOnlyOrder && bccomp($finalPrice, '0.00', 2) < 0) {
             $finalPrice = '0.00';
@@ -131,7 +136,7 @@ class CouponCalculator implements PriceCalculatorInterface
                 $quantity,
                 $unitPrice,
                 $item->isSelected(),
-                $sku->getSpu()?->getId() !== null ? (string) $sku->getSpu()->getId() : null,
+                null !== $sku->getSpu()?->getId() ? (string) $sku->getSpu()->getId() : null,
                 null,
                 $sku->getGtin(),
                 $sku->getSpu()?->getGtin(),
@@ -175,7 +180,7 @@ class CouponCalculator implements PriceCalculatorInterface
         CalculationContext $context,
         CouponEvaluationContext $evaluationContext,
         string $couponCode,
-        CouponCalculationAggregate $aggregate
+        CouponCalculationAggregate $aggregate,
     ): void {
         try {
             // 直接通过 Provider 链获取 VO
@@ -186,14 +191,15 @@ class CouponCalculator implements PriceCalculatorInterface
                     'code' => $couponCode,
                     'user' => $context->getUser()->getUserIdentifier(),
                 ]);
-                return;
+
+                throw new CheckoutException('优惠券码已失效！');
             }
-            
+
             $result = $this->couponEvaluator->evaluate(
                 $couponVO,
                 $evaluationContext->withMetadata(['coupon_code' => $couponCode])
             );
-            
+
             $aggregate->applyResult($couponCode, $result);
         } catch (CouponEvaluationException $exception) {
             $aggregate->recordMessage(sprintf('优惠券[%s]不可用: %s', $couponCode, $exception->getMessage()));
@@ -209,5 +215,4 @@ class CouponCalculator implements PriceCalculatorInterface
             ]);
         }
     }
-
 }

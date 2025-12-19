@@ -10,7 +10,8 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Tourze\CouponCoreBundle\Entity\Code;
-use Tourze\CouponCoreBundle\Repository\CodeRepository;
+use Tourze\CouponCoreBundle\Exception\CodeNotFoundException;
+use Tourze\CouponCoreBundle\Service\CouponService;
 use Tourze\CouponCoreBundle\Service\CouponVOFactory;
 use Tourze\CouponCoreBundle\ValueObject\CouponVO;
 use Tourze\OrderCheckoutBundle\Contract\CouponProviderInterface;
@@ -21,13 +22,13 @@ use Tourze\OrderCheckoutBundle\Contract\CouponProviderInterface;
  */
 #[AutoconfigureTag(name: 'coupon.provider')]
 #[WithMonologChannel(channel: 'order_checkout')]
-class LocalCouponProvider implements CouponProviderInterface
+final class LocalCouponProvider implements CouponProviderInterface
 {
     /** @var array<string, Code> 临时缓存已锁定的优惠券 */
     private array $lockedCodes = [];
 
     public function __construct(
-        private readonly CodeRepository $codeRepository,
+        private readonly CouponService $couponService,
         private readonly CouponVOFactory $couponVOFactory,
         private readonly EntityManagerInterface $entityManager,
         private readonly ?LoggerInterface $logger = null,
@@ -36,13 +37,12 @@ class LocalCouponProvider implements CouponProviderInterface
 
     public function findByCode(string $code, UserInterface $user): ?CouponVO
     {
-        $codeEntity = $this->codeRepository->findOneBy([
-            'owner' => $user,
-            'sn' => $code,
-            'valid' => true,
-        ]);
-
+        $codeEntity = $this->findCodeEntity($code, $user);
         if (null === $codeEntity) {
+            return null;
+        }
+
+        if (!$codeEntity->isValid()) {
             return null;
         }
 
@@ -66,6 +66,10 @@ class LocalCouponProvider implements CouponProviderInterface
             return false;
         }
 
+        if (!$codeEntity->isValid()) {
+            return false;
+        }
+
         if ($codeEntity->isLocked()) {
             $this->logger?->warning('优惠券已被锁定', [
                 'code' => $code,
@@ -76,9 +80,7 @@ class LocalCouponProvider implements CouponProviderInterface
         }
 
         try {
-            $codeEntity->setLocked(true);
-            $this->entityManager->persist($codeEntity);
-            $this->entityManager->flush();
+            $this->couponService->lockCode($codeEntity);
 
             // 缓存已锁定的代码
             $this->lockedCodes[$code] = $codeEntity;
@@ -114,9 +116,7 @@ class LocalCouponProvider implements CouponProviderInterface
         }
 
         try {
-            $codeEntity->setLocked(false);
-            $this->entityManager->persist($codeEntity);
-            $this->entityManager->flush();
+            $this->couponService->unlockCode($codeEntity);
 
             // 清理缓存
             unset($this->lockedCodes[$code]);
@@ -162,16 +162,20 @@ class LocalCouponProvider implements CouponProviderInterface
         }
 
         try {
-            $codeEntity->setValid(false);
-            $codeEntity->setLocked(false);
-            $codeEntity->setRedeemTime(new \DateTimeImmutable());
-
-            // 设置核销元数据
-            if (!empty($metadata)) {
-                $existingMetadata = $codeEntity->getMetadata() ?? [];
-                $codeEntity->setMetadata(array_merge($existingMetadata, $metadata));
+            // 设置核销备注（元数据以序列化形式记录到备注中）
+            if ($metadata !== []) {
+                $existingRemark = $codeEntity->getRemark() ?? '';
+                $metadataJson = json_encode($metadata, JSON_UNESCAPED_UNICODE);
+                $codeEntity->setRemark($existingRemark . ($existingRemark !== '' ? "\n" : '') . "[metadata]: " . $metadataJson);
             }
 
+            // 核销券码（会设置 useTime）
+            $this->couponService->redeemCode($codeEntity);
+
+            // 核销成功后解锁券码
+            // 注意：不能调用 unlockCode，因为它会检查 useTime，已核销的券码会抛出 CodeUsedException
+            // 因此直接更新 locked 状态
+            $codeEntity->setLocked(false);
             $this->entityManager->persist($codeEntity);
             $this->entityManager->flush();
 
@@ -214,10 +218,10 @@ class LocalCouponProvider implements CouponProviderInterface
      */
     private function findCodeEntity(string $code, UserInterface $user): ?Code
     {
-        return $this->codeRepository->findOneBy([
-            'owner' => $user,
-            'sn' => $code,
-            'valid' => true,
-        ]);
+        try {
+            return $this->couponService->getCodeDetail($user, $code);
+        } catch (CodeNotFoundException) {
+            return null;
+        }
     }
 }

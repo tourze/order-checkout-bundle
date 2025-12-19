@@ -12,7 +12,7 @@ use Tourze\CouponCoreBundle\ValueObject\CouponVO;
  * 外部优惠券请求事件
  * 当本地找不到优惠券时分发此事件，允许外部系统提供优惠券VO
  */
-class ExternalCouponRequestedEvent extends Event
+final class ExternalCouponRequestedEvent extends Event
 {
     private ?CouponVO $couponVO = null;
 

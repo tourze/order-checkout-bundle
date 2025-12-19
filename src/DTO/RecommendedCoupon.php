@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 推荐优惠券数据传输对象
  */
-class RecommendedCoupon
+final class RecommendedCoupon
 {
     /**
      * @param array<string, mixed> $conditions

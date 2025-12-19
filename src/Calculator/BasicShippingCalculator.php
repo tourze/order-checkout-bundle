@@ -12,7 +12,7 @@ use Tourze\OrderCheckoutBundle\DTO\ShippingResult;
  * 基础运费计算器
  * 实现简单的运费计算逻辑：满额包邮 + 地区差异化运费
  */
-class BasicShippingCalculator implements ShippingCalculatorInterface
+final class BasicShippingCalculator implements ShippingCalculatorInterface
 {
     /**
      * 免邮门槛

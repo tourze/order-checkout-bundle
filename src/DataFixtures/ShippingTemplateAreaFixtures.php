@@ -10,7 +10,7 @@ use Doctrine\Persistence\ObjectManager;
 use Tourze\OrderCheckoutBundle\Entity\ShippingTemplate;
 use Tourze\OrderCheckoutBundle\Entity\ShippingTemplateArea;
 
-class ShippingTemplateAreaFixtures extends Fixture implements DependentFixtureInterface
+final class ShippingTemplateAreaFixtures extends Fixture implements DependentFixtureInterface
 {
     public const SHIPPING_AREA_BEIJING_REFERENCE = 'shipping-area-beijing';
     public const SHIPPING_AREA_SHANGHAI_REFERENCE = 'shipping-area-shanghai';

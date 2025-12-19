@@ -24,6 +24,7 @@ final class ShippingTemplateAreaTest extends AbstractEntityTestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->area = new ShippingTemplateArea();
     }
 

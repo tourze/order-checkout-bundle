@@ -4,17 +4,13 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Service;
 
-use Doctrine\ORM\EntityManagerInterface;
 use OrderCoreBundle\Entity\Contract;
-use OrderCoreBundle\Entity\OrderContact;
-use OrderCoreBundle\Entity\OrderPrice;
 use OrderCoreBundle\Entity\OrderProduct;
 use OrderCoreBundle\Enum\OrderState;
 use OrderCoreBundle\Service\ContractService;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Tourze\DeliveryAddressBundle\Entity\DeliveryAddress;
-use Tourze\DeliveryAddressBundle\Service\DeliveryAddressService;
 use Tourze\OrderCartBundle\Interface\CartManagerInterface;
+use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\Contract\ShippingCalculatorInterface;
 use Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
@@ -24,9 +20,10 @@ use Tourze\OrderCheckoutBundle\DTO\PriceResult;
 use Tourze\OrderCheckoutBundle\DTO\ShippingContext;
 use Tourze\OrderCheckoutBundle\DTO\ShippingResult;
 use Tourze\OrderCheckoutBundle\DTO\StockValidationResult;
-use Tourze\OrderCheckoutBundle\Exception\CheckoutException;
 use Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper;
-use Tourze\ProductCoreBundle\Enum\PriceType;
+use Tourze\OrderCheckoutBundle\Service\Order\OrderContactBuilder;
+use Tourze\OrderCheckoutBundle\Service\Order\OrderPriceBuilder;
+use Tourze\OrderCheckoutBundle\Service\Order\OrderProductBuilder;
 use Tourze\StockManageBundle\Service\StockOperator;
 use Tourze\Symfony\AopDoctrineBundle\Attribute\Transactional;
 
@@ -34,19 +31,20 @@ use Tourze\Symfony\AopDoctrineBundle\Attribute\Transactional;
  * 结算服务
  * 统筹整个结算流程，协调各个模块执行
  */
-class CheckoutService
+final class CheckoutService
 {
     public function __construct(
         private readonly PriceCalculationService $priceCalculationService,
         private readonly StockValidatorInterface $stockValidator,
         private readonly ShippingCalculatorInterface $shippingCalculator,
         private readonly ContentFilterService $contentFilterService,
-        private readonly EntityManagerInterface $entityManager,
         private readonly ContractService $contractService,
         private readonly CartManagerInterface $cartManager,
         private readonly StockOperator $stockOperator,
-        private readonly DeliveryAddressService $deliveryAddressService,
         private readonly CouponWorkflowHelper $couponHelper,
+        private readonly OrderProductBuilder $orderProductBuilder,
+        private readonly OrderPriceBuilder $orderPriceBuilder,
+        private readonly OrderContactBuilder $orderContactBuilder,
     ) {
     }
 
@@ -135,6 +133,9 @@ class CheckoutService
         try {
             if ([] !== $couponCodes) {
                 $lockedCodes = $this->couponHelper->lockCouponCodes($context->getUser(), $couponCodes);
+                if ([] === $lockedCodes) {
+                    throw new CheckoutException('优惠券已失效~');
+                }
             }
 
             $extraItems = $this->couponHelper->extractCouponExtraItems($priceResult);
@@ -168,12 +169,6 @@ class CheckoutService
     }
 
     /**
-     * 验证库存以进行处理
-     */
-    /**
-     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
-     */
-    /**
      * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
      */
     private function validateStockForProcessing(CalculationContext $context, array $extraItems): StockValidationResult
@@ -188,9 +183,6 @@ class CheckoutService
     }
 
     /**
-     * 执行订单创建后的操作
-     */
-    /**
      * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
      */
     private function executePostOrderOperations(CalculationContext $context, Contract $contract, array $extraItems): void
@@ -200,9 +192,6 @@ class CheckoutService
         $this->handleOrderRemarkIfPresent($context, $contract);
     }
 
-    /**
-     * 处理订单备注（如果存在）
-     */
     private function handleOrderRemarkIfPresent(CalculationContext $context, Contract $contract): void
     {
         $orderRemark = $this->getValidRemark($context);
@@ -211,10 +200,6 @@ class CheckoutService
         }
     }
 
-    /**
-     * 创建订单
-     * @param ShippingResult|null $shippingResult
-     */
     /**
      * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
      * @return array{0: Contract, 1: array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>}
@@ -228,32 +213,23 @@ class CheckoutService
     }
 
     /**
-     * 持久化订单数据
-     */
-    /**
      * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
      * @return array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>
      */
     private function persistOrderData(Contract $contract, CalculationContext $context, PriceResult $priceResult, ?ShippingResult $shippingResult, array $extraItems): array
     {
-        $this->entityManager->persist($contract);
-
-        $orderProductResult = $this->createOrderProducts($contract, $context->getItems(), $extraItems);
+        $orderProductResult = $this->orderProductBuilder->createOrderProducts($contract, $context->getItems(), $extraItems, $context);
         $baseOrderProducts = $orderProductResult['base'];
         $extraOrderProducts = $orderProductResult['extra'];
         $updatedExtraItems = $orderProductResult['extraItems'];
-        $this->createOrderPrices($contract, $baseOrderProducts, $extraOrderProducts, $priceResult, $shippingResult, $updatedExtraItems);
-        $this->createOrderContact($contract, $context);
+        $this->orderPriceBuilder->createOrderPrices($contract, $baseOrderProducts, $extraOrderProducts, $priceResult, $shippingResult, $updatedExtraItems);
+        $this->orderContactBuilder->createOrderContact($contract, $context);
 
-        $this->entityManager->flush();
         $this->contractService->createOrder($contract);
 
         return $updatedExtraItems;
     }
 
-    /**
-     * 构建订单实体
-     */
     private function buildContractEntity(CalculationContext $context, PriceResult $priceResult): Contract
     {
         $contract = $this->createBasicContract($context);
@@ -262,9 +238,6 @@ class CheckoutService
         return $contract;
     }
 
-    /**
-     * 创建基本订单实体
-     */
     private function createBasicContract(CalculationContext $context): Contract
     {
         $contract = new Contract();
@@ -275,9 +248,6 @@ class CheckoutService
         return $contract;
     }
 
-    /**
-     * 配置订单属性
-     */
     private function configureContract(Contract $contract, CalculationContext $context, PriceResult $priceResult): void
     {
         $this->setContractType($contract, $context);
@@ -294,28 +264,12 @@ class CheckoutService
         }
     }
 
-    /**
-     * 设置订单类型
-     */
     private function setContractType(Contract $contract, CalculationContext $context): void
     {
-        $orderType = $this->getValidOrderType($context);
-        $contract->setType($orderType);
-    }
-
-    /**
-     * 获取有效的订单类型
-     */
-    private function getValidOrderType(CalculationContext $context): string
-    {
         $orderType = $context->getMetadataValue('orderType', 'normal');
-
-        return is_string($orderType) ? $orderType : 'normal';
+        $contract->setType(is_string($orderType) ? $orderType : 'normal');
     }
 
-    /**
-     * 设置订单备注
-     */
     private function setContractRemark(Contract $contract, CalculationContext $context): void
     {
         $remark = $this->getValidRemark($context);
@@ -324,13 +278,9 @@ class CheckoutService
         }
     }
 
-    /**
-     * 获取有效的备注
-     */
     private function getValidRemark(CalculationContext $context): ?string
     {
         $remark = $context->getMetadataValue('orderRemark');
-
         if (null === $remark || '' === $remark || !is_string($remark)) {
             return null;
         }
@@ -338,636 +288,52 @@ class CheckoutService
         return $remark;
     }
 
-    /**
-     * 设置订单价格和时间
-     */
     private function setContractPricing(Contract $contract, PriceResult $priceResult): void
     {
         $contract->setTotalAmount($priceResult->getFinalPrice());
         $autoCancelTime = new \DateTimeImmutable('+30 minutes');
         $contract->setAutoCancelTime($autoCancelTime);
+
+        $details = $priceResult->getDetails();
+        $totalIntegral = $details['total_integral_required'] ?? 0;
+        if (is_int($totalIntegral) && $totalIntegral > 0) {
+            $contract->setTotalIntegral($totalIntegral);
+        }
     }
 
-    /**
-     * 生成订单号
-     */
     private function generateOrderNumber(): string
     {
         return 'ORD' . date('YmdHis') . str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
     }
 
     /**
-     * 创建订单商品
-     *
-     * @param CheckoutItem[] $items
-     * @return OrderProduct[]
-     */
-    /**
-     * @param CheckoutItem[] $items
-     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
-     * @return array{base: array<OrderProduct>, extra: array<OrderProduct>, extraItems: array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}>}
-     */
-    private function createOrderProducts(Contract $contract, array $items, array $extraItems): array
-    {
-        $baseProducts = [];
-        foreach ($items as $item) {
-            $orderProduct = $this->buildOrderProduct($contract, $item);
-            $orderProduct->setIsGift(false);
-            $orderProduct->setSource('normal'); // 明确标记为正常购买
-            $contract->addProduct($orderProduct);
-            $this->entityManager->persist($orderProduct);
-            $baseProducts[] = $orderProduct;
-        }
-
-        $extraProducts = [];
-        foreach ($extraItems as $index => $extra) {
-            $checkoutItem = $extra['item'] ?? null;
-            if (!$checkoutItem instanceof CheckoutItem) {
-                continue;
-            }
-
-            $orderProduct = $this->buildOrderProduct($contract, $checkoutItem);
-            $type = $extra['type'] ?? 'coupon';
-            $orderProduct->setRemark($this->couponHelper->describeExtraItem($type));
-            $orderProduct->setSource($type);
-            $orderProduct->setIsGift(in_array($type, ['coupon_gift', 'coupon_redeem']));
-            $contract->addProduct($orderProduct);
-            $this->entityManager->persist($orderProduct);
-            $extraItems[$index]['order_product'] = $orderProduct;
-            $extraProducts[] = $orderProduct;
-        }
-
-        return [
-            'base' => $baseProducts,
-            'extra' => $extraProducts,
-            'extraItems' => $extraItems,
-        ];
-    }
-
-    /**
-     * 构建订单商品实体
-     */
-    private function buildOrderProduct(Contract $contract, CheckoutItem $item): OrderProduct
-    {
-        $orderProduct = $this->createOrderProductBase($contract, $item);
-        $this->setOrderProductDetails($orderProduct, $item);
-
-        return $orderProduct;
-    }
-
-    /**
-     * 创建订单商品基础信息
-     */
-    private function createOrderProductBase(Contract $contract, CheckoutItem $item): OrderProduct
-    {
-        $orderProduct = new OrderProduct();
-        $orderProduct->setContract($contract);
-        $orderProduct->setSku($item->getSku());
-        $orderProduct->setValid(true);
-
-        return $orderProduct;
-    }
-
-    /**
-     * 设置订单商品详情
-     */
-    private function setOrderProductDetails(OrderProduct $orderProduct, CheckoutItem $item): void
-    {
-        $sku = $item->getSku();
-        $orderProduct->setSpu($sku?->getSpu());
-        $orderProduct->setSpuTitle($sku?->getSpu()?->getTitle() ?? '');
-        $orderProduct->setQuantity($item->getQuantity());
-    }
-
-    /**
-     * 创建订单价格
-     * @param OrderProduct[] $orderProducts
-     * @param ShippingResult|null $shippingResult
-     */
-    /**
-     * @param OrderProduct[] $baseOrderProducts
-     * @param OrderProduct[] $extraOrderProducts
-     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
-     */
-    private function createOrderPrices(Contract $contract, array $baseOrderProducts, array $extraOrderProducts, PriceResult $priceResult, ?ShippingResult $shippingResult = null, array $extraItems = []): void
-    {
-        $this->createProductPrices($contract, $baseOrderProducts, $extraOrderProducts, $priceResult, $extraItems);
-        $this->createShippingPriceIfNeeded($contract, $shippingResult);
-    }
-
-    /**
-     * 创建运费价格（如果需要）
-     */
-    private function createShippingPriceIfNeeded(Contract $contract, ?ShippingResult $shippingResult): void
-    {
-        if (null === $shippingResult || $shippingResult->getShippingFee() <= 0) {
-            return;
-        }
-
-        $shippingPrice = $this->buildShippingPrice($contract, $shippingResult);
-        $contract->addPrice($shippingPrice);
-        $this->entityManager->persist($shippingPrice);
-    }
-
-    /**
-     * 构建运费价格对象
-     */
-    private function buildShippingPrice(Contract $contract, ShippingResult $shippingResult): OrderPrice
-    {
-        $shippingPrice = new OrderPrice();
-        $shippingPrice->setContract($contract);
-        $shippingPrice->setCurrency('CNY');
-        $shippingPrice->setType(PriceType::FREIGHT);
-        $shippingPrice->setName('运费');
-        $shippingPrice->setMoney(sprintf('%.2f', $shippingResult->getShippingFee()));
-        $shippingPrice->setCanRefund(true);
-        $shippingPrice->setPaid(false);
-        $shippingPrice->setRefund(false);
-
-        return $shippingPrice;
-    }
-
-    /**
-     * 为每个订单商品创建价格记录
-     *
-     * @param OrderProduct[] $orderProducts
-     */
-    /**
-     * @param OrderProduct[] $baseOrderProducts
-     * @param OrderProduct[] $extraOrderProducts
-     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
-     */
-    private function createProductPrices(Contract $contract, array $baseOrderProducts, array $extraOrderProducts, PriceResult $priceResult, array $extraItems): void
-    {
-        $priceDetails = $priceResult->getDetails();
-        $baseDetails = $priceDetails['base_price'] ?? [];
-        $allocationMap = $this->buildAllocationMap($priceDetails['coupon_allocations'] ?? []);
-
-        $productsBySkuId = $this->buildProductsBySkuIdMapping($baseOrderProducts);
-        $this->processProductPriceDetails($contract, $productsBySkuId, $baseDetails, $allocationMap);
-
-        $this->createExtraProductPrices($contract, $extraItems);
-    }
-
-    /**
-     * 构建订单商品 SKU ID 映射
-     *
-     * @param OrderProduct[] $orderProducts
-     * @return array<string, OrderProduct>
-     */
-    private function buildProductsBySkuIdMapping(array $orderProducts): array
-    {
-        $productsBySkuId = [];
-        foreach ($orderProducts as $orderProduct) {
-            $sku = $orderProduct->getSku();
-            if (null !== $sku) {
-                $productsBySkuId[(string) $sku->getId()] = $orderProduct;
-            }
-        }
-
-        return $productsBySkuId;
-    }
-
-    /**
-     * 处理商品价格详情
-     *
-     * @param array<string, OrderProduct> $productsBySkuId
-     * @param array<int, array<string, mixed>>|mixed $baseDetails
-     * @param array<string, string> $allocationMap
-     */
-    private function processProductPriceDetails(Contract $contract, array $productsBySkuId, mixed $baseDetails, array $allocationMap): void
-    {
-        if (!is_array($baseDetails)) {
-            return;
-        }
-
-        $this->processEachPriceDetail($contract, $productsBySkuId, $baseDetails, $allocationMap);
-    }
-
-    /**
-     * 处理每个价格详情
-     *
-     * @param array<string, OrderProduct> $productsBySkuId
-     * @param array<int, array<string, mixed>> $baseDetails
-     * @param array<string, string> $allocationMap
-     */
-    private function processEachPriceDetail(Contract $contract, array $productsBySkuId, array $baseDetails, array $allocationMap): void
-    {
-        foreach ($baseDetails as $detail) {
-            if (is_array($detail)) {
-                /** @var array<string, mixed> $detail */
-                $this->createSingleProductPrice($contract, $productsBySkuId, $detail, $allocationMap);
-            }
-        }
-    }
-
-    /**
-     * 为单个商品创建价格记录
-     *
-     * @param array<string, OrderProduct> $productsBySkuId
-     * @param array<string, mixed> $detail
-     * @param array<string, string> $allocationMap
-     */
-    private function createSingleProductPrice(Contract $contract, array $productsBySkuId, array $detail, array $allocationMap): void
-    {
-        $skuId = $this->extractValidSkuId($detail);
-        if ('' === $skuId) {
-            return;
-        }
-
-        $orderProduct = $productsBySkuId[$skuId] ?? null;
-        if (null === $orderProduct) {
-            return;
-        }
-
-        $allocation = $this->normalizePrice($allocationMap[$skuId] ?? '0.00');
-        $originalTotal = $this->normalizePrice($detail['total_price'] ?? 0);
-        $quantity = isset($detail['quantity']) ? max(1, (int) $detail['quantity']) : 1;
-
-        // 1. 创建销售价格记录（SALE类型）- 记录原始价格
-        $saleDetail = $detail;
-        $saleDetail['total_price'] = $originalTotal;
-        $saleDetail['unit_price'] = bcdiv($originalTotal, sprintf('%.0f', $quantity), 2);
-
-        $salePrice = $this->buildOrderPrice($contract, $orderProduct, $saleDetail);
-        $contract->addPrice($salePrice);
-        $this->entityManager->persist($salePrice);
-
-        // 2. 如果有优惠券折扣，创建营销价格记录（MARKETING类型）
-        if (bccomp($allocation, '0.00', 2) > 0) {
-            $couponPrice = $this->createCouponDiscountPrice($contract, $orderProduct, $allocation);
-            $contract->addPrice($couponPrice);
-            $this->entityManager->persist($couponPrice);
-        }
-    }
-
-    /**
-     * @param mixed $allocationDetails
-     * @return array<string, string>
-     */
-    private function buildAllocationMap(mixed $allocationDetails): array
-    {
-        if (!is_array($allocationDetails)) {
-            return [];
-        }
-
-        $map = [];
-        foreach ($allocationDetails as $allocation) {
-            if (!is_array($allocation)) {
-                continue;
-            }
-
-            $skuId = isset($allocation['sku_id']) ? (string) $allocation['sku_id'] : '';
-            if ('' === $skuId) {
-                continue;
-            }
-
-            $amount = $this->normalizePrice($allocation['amount'] ?? '0.00');
-            if (!isset($map[$skuId])) {
-                $map[$skuId] = '0.00';
-            }
-            $map[$skuId] = bcadd($map[$skuId], $amount, 2);
-        }
-
-        return $map;
-    }
-
-    /**
-     * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
-     */
-    private function createExtraProductPrices(Contract $contract, array $extraItems): void
-    {
-        foreach ($extraItems as $extra) {
-            $orderProduct = $extra['order_product'] ?? null;
-            if (!$orderProduct instanceof OrderProduct) {
-                continue;
-            }
-
-            $detail = [
-                'sku_id' => $this->couponHelper->resolveOrderProductSkuId($orderProduct),
-                'total_price' => $extra['total_price'] ?? '0.00',
-                'unit_price' => $extra['unit_price'] ?? '0.00',
-            ];
-
-            $productPrice = $this->buildOrderPrice($contract, $orderProduct, $detail);
-            $contract->addPrice($productPrice);
-            $this->entityManager->persist($productPrice);
-        }
-    }
-
-    /**
-     * 提取有效的SKU ID
-     * @param array<string, mixed> $detail
-     */
-    private function extractValidSkuId(array $detail): string
-    {
-        $skuIdValue = $detail['sku_id'] ?? null;
-
-        if (null === $skuIdValue) {
-            return '';
-        }
-
-        if (is_string($skuIdValue) || is_int($skuIdValue)) {
-            return (string) $skuIdValue;
-        }
-
-        return '';
-    }
-
-    /**
-     * 构建订单价格对象
-     *
-     * @param array<string, mixed> $detail
-     */
-    private function buildOrderPrice(Contract $contract, OrderProduct $orderProduct, array $detail): OrderPrice
-    {
-        $productPrice = $this->createOrderPriceBase($contract, $orderProduct);
-        $this->setProductPricing($productPrice, $detail);
-        $this->setOrderPriceFlags($productPrice);
-
-        return $productPrice;
-    }
-
-    /**
-     * 创建订单价格基础对象
-     */
-    private function createOrderPriceBase(Contract $contract, OrderProduct $orderProduct): OrderPrice
-    {
-        $productPrice = new OrderPrice();
-        $productPrice->setContract($contract);
-        $productPrice->setProduct($orderProduct);
-        $productPrice->setCurrency('CNY');
-        $productPrice->setType(PriceType::SALE);
-        $productPrice->setName($orderProduct->getSpuTitle() ?? 'Unknown Product');
-
-        return $productPrice;
-    }
-
-    /**
-     * 设置订单价格标志
-     */
-    private function setOrderPriceFlags(OrderPrice $productPrice): void
-    {
-        $productPrice->setCanRefund(true);
-        $productPrice->setPaid(false);
-        $productPrice->setRefund(false);
-    }
-
-    /**
-     * 设置商品价格信息
-     *
-     * @param array<string, mixed> $detail
-     */
-    private function setProductPricing(OrderPrice $productPrice, array $detail): void
-    {
-        $totalPrice = $this->normalizePrice($detail['total_price'] ?? 0);
-        $productPrice->setMoney($totalPrice);
-
-        $unitPrice = $this->normalizePrice($detail['unit_price'] ?? 0);
-        $productPrice->setUnitPrice($unitPrice);
-    }
-
-    /**
-     * 创建优惠券折扣价格记录
-     */
-    private function createCouponDiscountPrice(Contract $contract, OrderProduct $orderProduct, string $discountAmount): OrderPrice
-    {
-        $couponPrice = new OrderPrice();
-        $couponPrice->setContract($contract);
-        $couponPrice->setProduct($orderProduct);
-        $couponPrice->setCurrency('CNY');
-        $couponPrice->setType(PriceType::COUPON_DISCOUNT);
-        $couponPrice->setName('优惠券优惠');
-
-        // 折扣金额为负数
-        $couponPrice->setMoney('-' . $discountAmount);
-        $couponPrice->setUnitPrice('0.00'); // 折扣没有单价概念
-        $couponPrice->setCanRefund(true);
-        $couponPrice->setPaid(false);
-        $couponPrice->setRefund(false);
-
-        return $couponPrice;
-    }
-
-    /**
-     * 标准化价格格式
-     */
-    /**
-     * @return numeric-string
-     */
-    private function normalizePrice(mixed $price): string
-    {
-        if (is_string($price) && is_numeric($price)) {
-            return sprintf('%.2f', (float) $price);
-        }
-
-        return sprintf('%.2f', is_numeric($price) ? (float) $price : 0.0);
-    }
-
-    /**
-     * 创建订单联系人
-     */
-    private function createOrderContact(Contract $contract, CalculationContext $context): void
-    {
-        // 兑换券订单不需要收货地址
-        $orderType = $context->getMetadataValue('orderType');
-        if ('redeem' === $orderType) {
-            return;
-        }
-
-        $address = $this->getValidatedDeliveryAddress($contract, $context);
-        $this->createContactFromAddress($contract, $address);
-    }
-
-    /**
-     * 从地址创建联系人
-     */
-    private function createContactFromAddress(Contract $contract, DeliveryAddress $address): void
-    {
-        $contactInfo = $this->extractContactInfo($address);
-
-        if ($this->isValidContactInfo($contactInfo)) {
-            $orderContact = $this->buildOrderContact($contract, $address, $contactInfo);
-            $contract->addContact($orderContact);
-            $this->entityManager->persist($orderContact);
-        }
-    }
-
-    /**
-     * 获取验证后的收货地址
-     */
-    private function getValidatedDeliveryAddress(Contract $contract, CalculationContext $context): DeliveryAddress
-    {
-        $addressId = $this->extractAddressId($context);
-        $user = $this->validateUser($contract);
-        $addressIdString = $this->validateAddressIdFormat($addressId);
-
-        return $this->findAddress($addressIdString, $user);
-    }
-
-    private function extractAddressId(CalculationContext $context): mixed
-    {
-        $addressId = $context->getMetadataValue('addressId');
-        if (null === $addressId) {
-            throw new CheckoutException('收货地址ID不能为空');
-        }
-
-        return $addressId;
-    }
-
-    private function validateUser(Contract $contract): UserInterface
-    {
-        $user = $contract->getUser();
-        if (null === $user) {
-            throw new CheckoutException('订单用户信息无效');
-        }
-
-        return $user;
-    }
-
-    private function validateAddressIdFormat(mixed $addressId): string
-    {
-        if (!is_scalar($addressId)) {
-            throw new CheckoutException('收货地址ID格式无效');
-        }
-
-        $addressIdString = (string) $addressId;
-        if ('' === $addressIdString) {
-            throw new CheckoutException('收货地址ID格式无效');
-        }
-
-        return $addressIdString;
-    }
-
-    private function findAddress(string $addressIdString, UserInterface $user): DeliveryAddress
-    {
-        $address = $this->deliveryAddressService->getAddressByIdAndUser($addressIdString, $user);
-        if (null === $address) {
-            throw new CheckoutException('收货地址无效');
-        }
-
-        return $address;
-    }
-
-    /**
-     * 提取联系信息
-     *
-     * @return array{name: string, phone: string, address: string}
-     */
-    private function extractContactInfo(DeliveryAddress $address): array
-    {
-        return [
-            'name' => $address->getConsignee(),
-            'phone' => $address->getMobile(),
-            'address' => $address->getAddressLine(),
-        ];
-    }
-
-    /**
-     * 验证联系信息是否有效
-     *
-     * @param array{name: string, phone: string, address: string} $contactInfo
-     */
-    private function isValidContactInfo(array $contactInfo): bool
-    {
-        return '' !== $contactInfo['name'] && '' !== $contactInfo['phone'];
-    }
-
-    /**
-     * 构建订单联系人实体
-     *
-     * @param array{name: string, phone: string, address: string} $contactInfo
-     */
-    private function buildOrderContact(Contract $contract, DeliveryAddress $address, array $contactInfo): OrderContact
-    {
-        $orderContact = $this->createOrderContactBase($contract, $address, $contactInfo);
-        $this->setOrderContactRegionInfo($orderContact, $address);
-        $orderContact->setGender($address->getGender());
-
-        return $orderContact;
-    }
-
-    /**
-     * 创建订单联系人基础信息
-     *
-     * @param array{name: string, phone: string, address: string} $contactInfo
-     */
-    private function createOrderContactBase(Contract $contract, DeliveryAddress $address, array $contactInfo): OrderContact
-    {
-        $orderContact = new OrderContact();
-        $orderContact->setDeliveryAddressId($address->getId());
-        $orderContact->setContract($contract);
-        $orderContact->setRealname($contactInfo['name']);
-        $orderContact->setMobile($contactInfo['phone']);
-        $orderContact->setAddress($contactInfo['address']);
-
-        return $orderContact;
-    }
-
-    /**
-     * 设置订单联系人地区信息
-     */
-    private function setOrderContactRegionInfo(OrderContact $orderContact, DeliveryAddress $address): void
-    {
-        $orderContact->setProvinceName($address->getProvince());
-        $orderContact->setProvinceCode($address->getProvinceCode());
-        $orderContact->setCityName($address->getCity());
-        $orderContact->setCityCode($address->getCityCode());
-        $orderContact->setAreaName($address->getDistrict());
-        $orderContact->setDistrictCode($address->getDistrictCode());
-    }
-
-    /**
-     * 锁定库存
-     *
      * @param CheckoutItem[] $items
      */
     private function lockStock(array $items): void
     {
         foreach ($items as $item) {
-            $this->lockStockForItem($item);
+            $sku = $item->getSku();
+            $quantity = $item->getQuantity();
+            if (null !== $sku && $quantity > 0) {
+                $this->stockOperator->lockStock($sku, $quantity);
+            }
         }
     }
 
     /**
-     * 为单个项目锁定库存
-     */
-    private function lockStockForItem(CheckoutItem $item): void
-    {
-        $sku = $item->getSku();
-        $quantity = $item->getQuantity();
-
-        if (null !== $sku && $quantity > 0) {
-            $this->stockOperator->lockStock($sku, $quantity);
-        }
-    }
-
-    /**
-     * 清空购物车已选商品
-     *
      * @param CheckoutItem[] $items
      */
     private function clearCartSelectedItems(UserInterface $user, array $items): void
     {
         foreach ($items as $item) {
-            $this->removeCartItemIfExists($user, $item);
+            $cartItemId = $item->getId();
+            if (null !== $cartItemId) {
+                $this->cartManager->removeItem($user, (string) $cartItemId);
+            }
         }
     }
 
     /**
-     * 删除购物车项目（如果存在）
-     */
-    private function removeCartItemIfExists(UserInterface $user, CheckoutItem $item): void
-    {
-        $cartItemId = $item->getId();
-        if (null !== $cartItemId) {
-            $this->cartManager->removeItem($user, (string) $cartItemId);
-        }
-    }
-
-    /**
-     * 转换 mixed 数组为 CheckoutItem 数组
-     *
      * @param array<mixed> $cartItems
      * @return CheckoutItem[]
      * @throws CheckoutException
@@ -982,9 +348,6 @@ class CheckoutService
         return $checkoutItems;
     }
 
-    /**
-     * 转换单个项目为CheckoutItem
-     */
     private function convertSingleItem(mixed $item): CheckoutItem
     {
         return match (true) {
@@ -995,8 +358,6 @@ class CheckoutService
     }
 
     /**
-     * 清理数组项目为安全的类型
-     *
      * @param array<mixed, mixed> $item
      * @return array{id?: int, skuId?: int|string, quantity?: int, selected?: bool}
      */
@@ -1004,83 +365,23 @@ class CheckoutService
     {
         $sanitized = [];
 
-        $idData = $this->sanitizeItemId($item);
-        $skuData = $this->sanitizeItemSkuId($item);
-        $quantityData = $this->sanitizeItemQuantity($item);
-        $selectedData = $this->sanitizeItemSelected($item);
-
-        $sanitized = array_merge($sanitized, $idData, $skuData, $quantityData, $selectedData);
+        if (isset($item['id']) && is_int($item['id'])) {
+            $sanitized['id'] = $item['id'];
+        }
+        if (isset($item['skuId']) && (is_string($item['skuId']) || is_int($item['skuId']))) {
+            $sanitized['skuId'] = $item['skuId'];
+        }
+        if (isset($item['quantity']) && is_int($item['quantity'])) {
+            $sanitized['quantity'] = $item['quantity'];
+        }
+        if (isset($item['selected']) && is_bool($item['selected'])) {
+            $sanitized['selected'] = $item['selected'];
+        }
 
         /** @var array{id?: int, skuId?: int|string, quantity?: int, selected?: bool} $sanitized */
         return $sanitized;
     }
 
-    /**
-     * 清理项目ID
-     * @param array<mixed, mixed> $item
-     * @return array<string, mixed>
-     */
-    private function sanitizeItemId(array $item): array
-    {
-        $sanitized = [];
-        if (isset($item['id']) && is_int($item['id'])) {
-            $sanitized['id'] = $item['id'];
-        }
-
-        return $sanitized;
-    }
-
-    /**
-     * 清理SKU ID
-     * @param array<mixed, mixed> $item
-     * @return array<string, mixed>
-     */
-    private function sanitizeItemSkuId(array $item): array
-    {
-        $sanitized = [];
-        if (isset($item['skuId']) && (is_string($item['skuId']) || is_int($item['skuId']))) {
-            $sanitized['skuId'] = $item['skuId'];
-        }
-
-        return $sanitized;
-    }
-
-    /**
-     * 清理数量
-     * @param array<mixed, mixed> $item
-     * @return array<string, mixed>
-     */
-    private function sanitizeItemQuantity(array $item): array
-    {
-        $sanitized = [];
-        if (isset($item['quantity']) && is_int($item['quantity'])) {
-            $sanitized['quantity'] = $item['quantity'];
-        }
-
-        return $sanitized;
-    }
-
-    /**
-     * 清理选中状态
-     * @param array<mixed, mixed> $item
-     * @return array<string, mixed>
-     */
-    private function sanitizeItemSelected(array $item): array
-    {
-        $sanitized = [];
-        if (isset($item['selected']) && is_bool($item['selected'])) {
-            $sanitized['selected'] = $item['selected'];
-        }
-
-        return $sanitized;
-    }
-
-    /**
-     * 执行库存验证
-     *
-     * @param CheckoutItem[] $checkoutItems
-     * @throws CheckoutException
-     */
     /**
      * @param CheckoutItem[] $checkoutItems
      * @param array<int, array{item: CheckoutItem, type: string, unit_price: string, total_price: string, reference_unit_price?: string, order_product?: OrderProduct|null}> $extraItems
@@ -1097,8 +398,6 @@ class CheckoutService
     }
 
     /**
-     * 构建计算上下文
-     *
      * @param CheckoutItem[] $checkoutItems
      * @param string[] $appliedCoupons
      * @param array<string, mixed> $options
@@ -1120,8 +419,6 @@ class CheckoutService
     }
 
     /**
-     * 计算运费
-     *
      * @param CheckoutItem[] $checkoutItems
      * @param array<string, mixed> $options
      */
@@ -1134,14 +431,6 @@ class CheckoutService
     }
 
     private function processOrderRemark(string $orderRemark, CalculationContext $context, Contract $contract): void
-    {
-        $this->safelyProcessRemark($orderRemark);
-    }
-
-    /**
-     * 安全地处理订单备注
-     */
-    private function safelyProcessRemark(string $orderRemark): void
     {
         try {
             $sanitizedRemark = $this->contentFilterService->sanitizeRemark($orderRemark);

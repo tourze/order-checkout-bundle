@@ -13,7 +13,7 @@ use Tourze\PHPUnitSymfonyKernelTest\Attribute\AsRepository;
  * @extends ServiceEntityRepository<OrderExtendedInfo>
  */
 #[AsRepository(entityClass: OrderExtendedInfo::class)]
-class OrderExtendedInfoRepository extends ServiceEntityRepository
+final class OrderExtendedInfoRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {

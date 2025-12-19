@@ -6,7 +6,7 @@ namespace Tourze\OrderCheckoutBundle\DependencyInjection;
 
 use Tourze\SymfonyDependencyServiceLoader\AutoExtension;
 
-class OrderCheckoutExtension extends AutoExtension
+final class OrderCheckoutExtension extends AutoExtension
 {
     protected function getConfigDir(): string
     {

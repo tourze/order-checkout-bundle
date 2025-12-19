@@ -12,7 +12,7 @@ use Tourze\OrderCheckoutBundle\DTO\PromotionResult;
  * 满减促销匹配器
  * 示例实现：满100减10
  */
-class FullReductionMatcher implements PromotionMatcherInterface
+final class FullReductionMatcher implements PromotionMatcherInterface
 {
     /** @var numeric-string */
     private readonly string $threshold;

@@ -10,7 +10,7 @@ use Tourze\OrderCheckoutBundle\Contract\AddressResolverInterface;
  * 基础地址解析器
  * 为测试和默认场景提供简单实现，避免跨模块依赖
  */
-class BasicAddressResolver implements AddressResolverInterface
+final class BasicAddressResolver implements AddressResolverInterface
 {
     public function resolveAddress(string $addressId): ?array
     {

@@ -13,7 +13,7 @@ use Tourze\PHPUnitSymfonyKernelTest\Attribute\AsRepository;
  * @extends ServiceEntityRepository<CouponAllocationDetail>
  */
 #[AsRepository(entityClass: CouponAllocationDetail::class)]
-class CouponAllocationDetailRepository extends ServiceEntityRepository
+final class CouponAllocationDetailRepository extends ServiceEntityRepository
 {
     public function __construct(ManagerRegistry $registry)
     {

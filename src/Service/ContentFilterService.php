@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\Service;
 use Tourze\OrderCheckoutBundle\DTO\FilterResult;
 use Tourze\OrderCheckoutBundle\Exception\ContentFilterException;
 
-class ContentFilterService
+final class ContentFilterService
 {
     /** @var array<string> */
     private array $sensitiveWords = [

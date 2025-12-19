@@ -11,7 +11,7 @@ use Tourze\ProductCoreBundle\Entity\Sku;
 /**
  * 结算项目 - 用于结算流程的数据传输对象
  */
-class CheckoutItem
+final class CheckoutItem
 {
     public function __construct(
         private readonly int|string $skuId,

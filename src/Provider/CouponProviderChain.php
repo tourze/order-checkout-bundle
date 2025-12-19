@@ -6,7 +6,7 @@ namespace Tourze\OrderCheckoutBundle\Provider;
 
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\TaggedIterator;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Tourze\CouponCoreBundle\ValueObject\CouponVO;
@@ -18,13 +18,13 @@ use Tourze\OrderCheckoutBundle\Event\ExternalCouponRequestedEvent;
  * 管理多个优惠券提供者，按优先级依次尝试，最后分发事件
  */
 #[WithMonologChannel(channel: 'order_checkout')]
-class CouponProviderChain
+final class CouponProviderChain
 {
     /** @var CouponProviderInterface[] */
     private array $providers = [];
 
     public function __construct(
-        #[TaggedIterator('coupon.provider')] iterable $providers,
+        #[AutowireIterator(tag: 'coupon.provider')] iterable $providers,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly ?LoggerInterface $logger = null,
     ) {

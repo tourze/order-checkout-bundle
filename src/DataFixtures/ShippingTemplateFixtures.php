@@ -11,7 +11,7 @@ use Tourze\OrderCheckoutBundle\Entity\ShippingTemplateArea;
 use Tourze\OrderCheckoutBundle\Enum\ChargeType;
 use Tourze\OrderCheckoutBundle\Enum\ShippingTemplateStatus;
 
-class ShippingTemplateFixtures extends Fixture
+final class ShippingTemplateFixtures extends Fixture
 {
     public const SHIPPING_TEMPLATE_DEFAULT_REFERENCE = 'shipping-template-default';
     public const SHIPPING_TEMPLATE_QUANTITY_REFERENCE = 'shipping-template-quantity';

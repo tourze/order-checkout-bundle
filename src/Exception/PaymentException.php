@@ -7,6 +7,6 @@ namespace Tourze\OrderCheckoutBundle\Exception;
 /**
  * 支付异常
  */
-class PaymentException extends \RuntimeException
+final class PaymentException extends \RuntimeException
 {
 }

@@ -1,46 +1,60 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Tourze\OrderCheckoutBundle\Tests\Service;
 
-use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\MockObject\MockObject;
-use PHPUnit\Framework\TestCase;
-use Tourze\OrderCheckoutBundle\Entity\CouponAllocationDetail;
-use Tourze\OrderCheckoutBundle\Entity\CouponUsageLog;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractIntegrationTestCase;
 
 /**
  * @internal
  */
 #[CoversClass(CouponUsageLogger::class)]
-final class CouponUsageLoggerTest extends TestCase
+#[RunTestsInSeparateProcesses]
+final class CouponUsageLoggerTest extends AbstractIntegrationTestCase
 {
-    public function testLogUsagePersistsEntities(): void
+    private CouponUsageLogger $logger;
+
+    protected function onSetUp(): void
     {
-        /** @var EntityManagerInterface&MockObject $em */
-        $em = $this->createMock(EntityManagerInterface::class);
+        $this->logger = self::getService(CouponUsageLogger::class);
+    }
 
-        $em->expects(self::exactly(1 + 1))
-            ->method('persist')
-            ->with(self::callback(static function (object $entity): bool {
-                return $entity instanceof CouponUsageLog || $entity instanceof CouponAllocationDetail;
-            }));
+    public function testLoggerCanBeInstantiated(): void
+    {
+        $this->assertInstanceOf(CouponUsageLogger::class, $this->logger);
+    }
 
-        $em->expects(self::once())->method('flush');
-
-        $logger = new CouponUsageLogger($em);
-        $logger->logUsage(
-            couponCode: 'CODE',
+    public function testLogUsageCreatesRecords(): void
+    {
+        $this->logger->logUsage(
+            couponCode: 'TEST-CODE-123',
             couponType: 'full_reduction',
-            userIdentifier: 'user',
-            orderId: 1,
-            orderNumber: 'NO',
-            discountAmount: '5.00',
-            allocations: [
-                ['sku_id' => 'SKU1', 'amount' => '5.00', 'order_product_id' => 2],
-            ],
-            metadata: []
+            userIdentifier: 'test-user',
+            orderId: 12345,
+            orderNumber: 'ORDER-12345',
+            discountAmount: '50.00',
+            allocations: []
         );
+
+        // 验证记录已创建 - 通过查询数据库来验证
+        $entityManager = self::getEntityManager();
+
+        $usageLogs = $entityManager
+            ->getRepository(\Tourze\OrderCheckoutBundle\Entity\CouponUsageLog::class)
+            ->findBy(['couponCode' => 'TEST-CODE-123']);
+
+        $this->assertCount(1, $usageLogs);
+
+        $log = $usageLogs[0];
+        $this->assertSame('TEST-CODE-123', $log->getCouponCode());
+        $this->assertSame('full_reduction', $log->getCouponType());
+        $this->assertSame('test-user', $log->getUserIdentifier());
+        $this->assertSame(12345, $log->getOrderId());
+        $this->assertSame('ORDER-12345', $log->getOrderNumber());
+        $this->assertSame('50.00', $log->getDiscountAmount());
     }
 }

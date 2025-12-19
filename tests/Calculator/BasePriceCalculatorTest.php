@@ -5,106 +5,127 @@ declare(strict_types=1);
 namespace Tourze\OrderCheckoutBundle\Tests\Calculator;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
 use Tourze\OrderCheckoutBundle\DTO\PriceCalculationItem;
 use Tourze\OrderCheckoutBundle\DTO\PriceResult;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractIntegrationTestCase;
 use Tourze\ProductCoreBundle\Entity\Sku;
 use Tourze\ProductCoreBundle\Entity\Spu;
-use Tourze\ProductServiceContracts\SkuLoaderInterface;
 
 /**
  * @internal
  */
 #[CoversClass(BasePriceCalculator::class)]
-final class BasePriceCalculatorTest extends TestCase
+#[RunTestsInSeparateProcesses]
+final class BasePriceCalculatorTest extends AbstractIntegrationTestCase
 {
-    private SkuLoaderInterface $skuLoader;
+    private BasePriceCalculator $calculator;
 
-    protected function setUp(): void
+    protected function onSetUp(): void
     {
-        $this->skuLoader = $this->createMock(SkuLoaderInterface::class);
+        $this->calculator = self::getService(BasePriceCalculator::class);
     }
 
     public function testBasePriceCalculatorCanBeInstantiated(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-
-        $this->assertInstanceOf(BasePriceCalculator::class, $calculator);
+        $this->assertInstanceOf(BasePriceCalculator::class, $this->calculator);
     }
 
     public function testCalculateReturnsPriceResult(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn([]);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $context = new CalculationContext($user, [], []);
 
-        $result = $calculator->calculate($context);
+        $result = $this->calculator->calculate($context);
 
         $this->assertInstanceOf(PriceResult::class, $result);
+        $this->assertSame('0.00', $result->getOriginalPrice());
+        $this->assertSame('0.00', $result->getFinalPrice());
     }
 
     public function testSupportsWithEmptyItems(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn([]);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $context = new CalculationContext($user, [], []);
 
-        $this->assertFalse($calculator->supports($context));
+        $this->assertFalse($this->calculator->supports($context));
     }
 
     public function testSupportsWithItems(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn(['some_item']);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
 
-        $this->assertTrue($calculator->supports($context));
+        // 创建真实的 Sku 对象
+        $spu = new Spu();
+        $spu->setTitle('测试商品');
+        $spu->setState(\Tourze\ProductCoreBundle\Enum\SpuState::ONLINE);
+        $spu->setValid(true);
+
+        $sku = new Sku();
+        $sku->setSpu($spu);
+        $sku->setTitle('测试 SKU');
+        $sku->setMarketPrice('100.00');
+        $sku->setUnit('个');
+
+        self::getEntityManager()->persist($spu);
+        self::getEntityManager()->persist($sku);
+        self::getEntityManager()->flush();
+
+        $items = [
+            new PriceCalculationItem(
+                skuId: $sku->getId(),
+                quantity: 1,
+                selected: true,
+                sku: $sku
+            ),
+        ];
+        $context = new CalculationContext($user, $items, []);
+
+        $this->assertTrue($this->calculator->supports($context));
     }
 
     public function testGetPriority(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-
-        $this->assertSame(1000, $calculator->getPriority());
+        $this->assertSame(1000, $this->calculator->getPriority());
     }
 
     public function testGetType(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
-
-        $this->assertSame('base_price', $calculator->getType());
+        $this->assertSame('base_price', $this->calculator->getType());
     }
 
     public function testCalculateWithProductsInfo(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
 
-        // Mock SKU
-        $sku = $this->createMock(Sku::class);
-        $spu = $this->createMock(Spu::class);
+        // 创建真实的商品数据
+        $spu = new Spu();
+        $spu->setTitle('测试商品');
+        $spu->setState(\Tourze\ProductCoreBundle\Enum\SpuState::ONLINE);
+        $spu->setValid(true);
 
-        $sku->method('getMarketPrice')->willReturn('99.99');
-        $sku->method('getSpu')->willReturn($spu);
-        $sku->method('getMainThumb')->willReturn('https://example.com/thumb.jpg');
-        $sku->method('getFullName')->willReturn('Test Product - Red');
-        $sku->method('getDisplayAttribute')->willReturn('颜色红色');
-        $spu->method('getId')->willReturn(456);
+        $sku = new Sku();
+        $sku->setSpu($spu);
+        $sku->setTitle('测试商品 - 红色');
+        $sku->setMarketPrice('99.99');
+        $sku->setUnit('个');
 
-        // Mock calculation item
-        $item = $this->createMock(PriceCalculationItem::class);
-        $item->method('getSkuId')->willReturn('123');
-        $item->method('getQuantity')->willReturn(2);
-        $item->method('isSelected')->willReturn(true);
-        $item->method('getSku')->willReturn($sku);
-        $item->method('getEffectiveUnitPrice')->willReturn('99.99');
-        $item->method('getSubtotal')->willReturn('199.98');
+        self::getEntityManager()->persist($spu);
+        self::getEntityManager()->persist($sku);
+        self::getEntityManager()->flush();
 
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn([$item]);
+        $item = new PriceCalculationItem(
+            skuId: $sku->getId(),
+            quantity: 2,
+            selected: true,
+            sku: $sku
+        );
 
-        $result = $calculator->calculate($context);
+        $context = new CalculationContext($user, [$item], []);
+
+        $result = $this->calculator->calculate($context);
 
         $this->assertInstanceOf(PriceResult::class, $result);
         $this->assertSame('199.98', $result->getOriginalPrice());
@@ -115,31 +136,44 @@ final class BasePriceCalculatorTest extends TestCase
         $this->assertCount(1, $products);
 
         $product = $products[0];
-        $this->assertSame('123', $product['skuId']);
-        $this->assertSame(456, $product['spuId']);
+        $this->assertSame($sku->getId(), $product['skuId']);
+        $this->assertSame($spu->getId(), $product['spuId']);
         $this->assertSame(2, $product['quantity']);
         $this->assertSame('199.98', $product['payablePrice']);
         $this->assertSame('99.99', $product['unitPrice']);
-        $this->assertSame('https://example.com/thumb.jpg', $product['mainThumb']);
-        $this->assertSame('Test Product - Red', $product['productName']);
-        $this->assertSame('颜色红色', $product['specifications']);
+        // productName 是 getFullName() 返回的，格式为 "SPU标题 - SKU标题"
+        $this->assertSame('测试商品 - 测试商品 - 红色', $product['productName']);
     }
 
     public function testCalculateWithUnselectedItemsExcludesFromProducts(): void
     {
-        $calculator = new BasePriceCalculator($this->skuLoader);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
 
-        // Mock a SKU for the unselected item
-        $sku = $this->createMock(Sku::class);
+        // 创建真实的 Sku 对象
+        $spu = new Spu();
+        $spu->setTitle('测试商品');
+        $spu->setState(\Tourze\ProductCoreBundle\Enum\SpuState::ONLINE);
+        $spu->setValid(true);
 
-        $item = $this->createMock(PriceCalculationItem::class);
-        $item->method('isSelected')->willReturn(false);
-        $item->method('getSku')->willReturn($sku);
+        $sku = new Sku();
+        $sku->setSpu($spu);
+        $sku->setTitle('测试 SKU');
+        $sku->setMarketPrice('100.00');
+        $sku->setUnit('个');
 
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn([$item]);
+        self::getEntityManager()->persist($spu);
+        self::getEntityManager()->persist($sku);
+        self::getEntityManager()->flush();
 
-        $result = $calculator->calculate($context);
+        $item = new PriceCalculationItem(
+            skuId: $sku->getId(),
+            quantity: 1,
+            selected: false,
+            sku: $sku
+        );
+        $context = new CalculationContext($user, [$item], []);
+
+        $result = $this->calculator->calculate($context);
 
         $this->assertSame([], $result->getProducts());
         $this->assertSame('0.00', $result->getOriginalPrice());

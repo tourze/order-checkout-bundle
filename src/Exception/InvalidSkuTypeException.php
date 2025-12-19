@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\Exception;
 /**
  * 当 SKU 类型无效时抛出的异常
  */
-class InvalidSkuTypeException extends PriceCalculationException
+final class InvalidSkuTypeException extends PriceCalculationException
 {
     public function __construct(string $actualType, int $code = 0, ?\Throwable $previous = null)
     {

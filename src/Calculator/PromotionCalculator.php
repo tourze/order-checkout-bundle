@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Calculator;
 
+use Symfony\Component\DependencyInjection\Attribute\AutoconfigureTag;
 use Tourze\OrderCheckoutBundle\Contract\PriceCalculatorInterface;
 use Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
@@ -14,7 +15,8 @@ use Tourze\OrderCheckoutBundle\DTO\PromotionResult;
  * 促销价格计算器
  * 基于促销匹配器计算促销折扣
  */
-class PromotionCalculator implements PriceCalculatorInterface
+#[AutoconfigureTag(name: 'order_checkout.price_calculator')]
+final class PromotionCalculator implements PriceCalculatorInterface
 {
     /**
      * @var PromotionMatcherInterface[]

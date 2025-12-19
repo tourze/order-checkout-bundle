@@ -30,6 +30,7 @@ final class CalculationContextTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->user = $this->createMock(UserInterface::class);
         $this->items = [
             new CheckoutItem('SKU001', 2, true),

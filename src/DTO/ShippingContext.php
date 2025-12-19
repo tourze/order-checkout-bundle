@@ -9,7 +9,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * 运费计算上下文
  */
-class ShippingContext
+final class ShippingContext
 {
     /**
      * @param CheckoutItem[]       $items    购物车商品数组

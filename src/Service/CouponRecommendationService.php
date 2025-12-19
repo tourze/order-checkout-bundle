@@ -24,7 +24,7 @@ use Tourze\ProductServiceContracts\SkuLoaderInterface;
  * 负责获取用户可用优惠券并根据购物车内容进行筛选和排序
  */
 #[WithMonologChannel(channel: 'order_checkout')]
-class CouponRecommendationService
+final class CouponRecommendationService
 {
     public function __construct(
         private readonly CouponProviderChain $providerChain,
@@ -82,13 +82,16 @@ class CouponRecommendationService
     {
         $totalAmount = $this->calculateTotalAmount($orderItems);
         $recommendations = [];
-        $maxRecommendations = 10;
+        $maxRecommendations = 100;
         $evaluatedCount = 0;
 
+        $this->logger->debug('开始评估可用优惠券',[
+            'coupons' => $coupons
+        ]);
         foreach ($coupons as $couponVO) {
-            $this->logger?->debug('评估优惠券', ['code' => $couponVO->toArray()]);
+            $this->logger?->debug('评估优惠券' . $couponVO->getCode(), ['code' => $couponVO->toArray()]);
             if ($this->shouldStopEvaluation($evaluatedCount, $maxRecommendations, $recommendations)) {
-                $this->logger?->debug('停止评估优惠券', ['code' => $couponVO->toArray()]);
+                $this->logger?->debug('停止评估优惠券'. $couponVO->getCode(), ['code' => $couponVO->toArray()]);
                 break;
             }
 
@@ -147,7 +150,7 @@ class CouponRecommendationService
         // 检查有效期
         $now = new \DateTimeImmutable();
         if (!$couponVO->isWithinValidity($now)) {
-            $this->logger?->debug('优惠券不在有效期内（快速验证）', ['code' => $couponVO->getCode()]);
+            $this->logger?->debug('优惠券不在有效期内（快速验证）' . $couponVO->getCode(), ['code' => $couponVO->getCode()]);
             return false;
         }
 
@@ -159,7 +162,7 @@ class CouponRecommendationService
                 /** @var numeric-string $thresholdAmount */
                 /** @var numeric-string $totalAmount */
                 if (bccomp($totalAmount, $thresholdAmount, 2) < 0) {
-                    $this->logger?->debug('优惠券未达到最低消费门槛（快速验证）', [
+                    $this->logger?->debug('优惠券未达到最低消费门槛（快速验证）'. $couponVO->getCode(), [
                         'code' => $couponVO->getCode(),
                         'threshold' => $thresholdAmount,
                         'total' => $totalAmount,
@@ -199,6 +202,9 @@ class CouponRecommendationService
             }
         }
 
+        $this->logger->debug('获取所有有效优惠券',[
+            'coupons' => $coupons
+        ]);
         return $coupons;
     }
 
@@ -210,13 +216,13 @@ class CouponRecommendationService
         try {
             // 检查有效期
             if (!$couponVO->isWithinValidity($context->getEvaluateTime())) {
-                $this->logger?->debug('优惠券不在有效期内', ['code' => $couponVO->getCode()]);
+                $this->logger?->debug('优惠券不在有效期内'. $couponVO->getCode(), ['code' => $couponVO->getCode()]);
                 return null;
             }
 
             // 检查适用范围
             if (!$this->isApplicableToCart($couponVO, $context->getItems())) {
-                $this->logger?->debug('优惠券不适用于当前购物车', ['code' => $couponVO->getCode()]);
+                $this->logger?->debug('优惠券不适用于当前购物车'. $couponVO->getCode(), ['code' => $couponVO->getCode()]);
                 return null;
             }
 
@@ -269,14 +275,13 @@ class CouponRecommendationService
                 redeemItems: $redeemItems
             );
         } catch (CouponEvaluationException $e) {
-            $this->logger?->debug('优惠券不可用', [
-                'code' => $couponVO->getCode(),
+            $this->logger?->debug('优惠券不可用' . $couponVO->getCode() , [
                 'reason' => $e->getMessage(),
             ]);
 
             return null;
         } catch (\Throwable $e) {
-            $this->logger?->error('优惠券评估异常', [
+            $this->logger?->error('优惠券评估异常' . $couponVO->getCode(), [
                 'code' => $couponVO->getCode(),
                 'error' => $e->getMessage(),
             ]);

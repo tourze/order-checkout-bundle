@@ -11,7 +11,7 @@ use Tourze\ProductCoreBundle\Entity\Sku;
 /**
  * 价格计算项目 - 独立于具体业务实体的数据传输对象
  */
-class PriceCalculationItem
+final class PriceCalculationItem
 {
     public function __construct(
         private readonly int|string $skuId,
@@ -166,18 +166,44 @@ class PriceCalculationItem
     }
 
     /**
-     * 获取有效的单价（从 SKU 获取市场价格）
+     * 获取有效的单价（优先级：marketPrice > originalPrice > 0.00）
      * @return numeric-string
      */
     public function getEffectiveUnitPrice(): string
     {
         if (null === $this->sku) {
+            error_log("[价格计算] SKU为空，返回0.00 - skuId: {$this->skuId}");
             return '0.00';
         }
 
-        $marketPrice = $this->sku->getMarketPrice();
+        $skuId = $this->skuId;
+        $skuDetails = [
+            'skuId' => $skuId,
+            'marketPrice' => $this->sku->getMarketPrice(),
+            'originalPrice' => $this->sku->getOriginalPrice(),
+        ];
+        error_log("[价格计算] 开始获取有效单价 - " . json_encode($skuDetails));
 
-        return null !== $marketPrice ? sprintf('%.2f', $marketPrice) : '0.00';
+        // 优先使用市场价格
+        $marketPrice = $this->sku->getMarketPrice();
+        if (null !== $marketPrice && $marketPrice !== '' && $marketPrice !== '0.00') {
+            $formattedPrice = sprintf('%.2f', (float) $marketPrice);
+            error_log("[价格计算] 使用市场价格 - skuId: {$skuId}, marketPrice: {$marketPrice}, formatted: {$formattedPrice}");
+            return $formattedPrice;
+        }
+
+        error_log("[价格计算] 市场价格无效，尝试原价 - skuId: {$skuId}, marketPrice: " . var_export($marketPrice, true));
+
+        // 其次使用原价
+        $originalPrice = $this->sku->getOriginalPrice();
+        if (null !== $originalPrice && $originalPrice !== '' && $originalPrice !== '0.00') {
+            $formattedPrice = sprintf('%.2f', (float) $originalPrice);
+            error_log("[价格计算] 使用原价 - skuId: {$skuId}, originalPrice: {$originalPrice}, formatted: {$formattedPrice}");
+            return $formattedPrice;
+        }
+
+        error_log("[价格计算] 所有价格无效，返回0.00 - skuId: {$skuId}, originalPrice: " . var_export($originalPrice, true));
+        return '0.00';
     }
 
     /**

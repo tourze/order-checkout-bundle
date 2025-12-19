@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 库存验证结果
  */
-class StockValidationResult
+final class StockValidationResult
 {
     /**
      * @param array<string, mixed> $errors   库存错误信息

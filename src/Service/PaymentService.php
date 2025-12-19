@@ -20,7 +20,7 @@ use Tourze\Symfony\AopDoctrineBundle\Attribute\Transactional;
  * 支付服务
  * 处理订单支付相关逻辑
  */
-class PaymentService
+final class PaymentService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

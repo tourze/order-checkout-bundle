@@ -27,9 +27,9 @@ final class CheckoutResultTest extends TestCase
     public function testCheckoutResultWithParameters(): void
     {
         $items = [$this->createMock(CartItem::class)];
-        $priceResult = $this->createMock(PriceResult::class);
-        $shippingResult = $this->createMock(ShippingResult::class);
-        $stockValidation = $this->createMock(StockValidationResult::class);
+        $priceResult = new PriceResult('100.00', '90.00', '10.00');
+        $shippingResult = new ShippingResult(10.0, false);
+        $stockValidation = StockValidationResult::success();
         $appliedCoupons = ['COUPON1'];
 
         $result = new CheckoutResult(
@@ -55,11 +55,8 @@ final class CheckoutResultTest extends TestCase
 
     public function testGetFinalTotalWithResults(): void
     {
-        $priceResult = $this->createMock(PriceResult::class);
-        $priceResult->method('getFinalPrice')->willReturn('100.00');
-
-        $shippingResult = $this->createMock(ShippingResult::class);
-        $shippingResult->method('getShippingFee')->willReturn(10.0);
+        $priceResult = new PriceResult('100.00', '100.00', '0.00');
+        $shippingResult = new ShippingResult(10.0, false);
 
         $result = new CheckoutResult(
             [],
@@ -78,8 +75,7 @@ final class CheckoutResultTest extends TestCase
 
     public function testGetOriginalTotalWithPriceResult(): void
     {
-        $priceResult = $this->createMock(PriceResult::class);
-        $priceResult->method('getOriginalPrice')->willReturn('120.00');
+        $priceResult = new PriceResult('120.00', '100.00', '20.00');
 
         $result = new CheckoutResult(
             [],
@@ -97,8 +93,7 @@ final class CheckoutResultTest extends TestCase
 
     public function testGetTotalDiscountWithPriceResult(): void
     {
-        $priceResult = $this->createMock(PriceResult::class);
-        $priceResult->method('getDiscount')->willReturn('20.00');
+        $priceResult = new PriceResult('120.00', '100.00', '20.00');
 
         $result = new CheckoutResult(
             [],
@@ -116,8 +111,7 @@ final class CheckoutResultTest extends TestCase
 
     public function testHasStockIssuesWithValidStock(): void
     {
-        $stockValidation = $this->createMock(StockValidationResult::class);
-        $stockValidation->method('isValid')->willReturn(true);
+        $stockValidation = StockValidationResult::success();
 
         $result = new CheckoutResult(
             [],
@@ -131,8 +125,7 @@ final class CheckoutResultTest extends TestCase
 
     public function testHasStockIssuesWithInvalidStock(): void
     {
-        $stockValidation = $this->createMock(StockValidationResult::class);
-        $stockValidation->method('isValid')->willReturn(false);
+        $stockValidation = StockValidationResult::failure(['库存不足']);
 
         $result = new CheckoutResult(
             [],
@@ -153,8 +146,7 @@ final class CheckoutResultTest extends TestCase
     public function testCanCheckoutWithItemsAndValidStock(): void
     {
         $items = [$this->createMock(CartItem::class)];
-        $stockValidation = $this->createMock(StockValidationResult::class);
-        $stockValidation->method('isValid')->willReturn(true);
+        $stockValidation = StockValidationResult::success();
 
         $result = new CheckoutResult(
             $items,
@@ -169,8 +161,7 @@ final class CheckoutResultTest extends TestCase
     public function testCanCheckoutWithItemsAndInvalidStock(): void
     {
         $items = [$this->createMock(CartItem::class)];
-        $stockValidation = $this->createMock(StockValidationResult::class);
-        $stockValidation->method('isValid')->willReturn(false);
+        $stockValidation = StockValidationResult::failure(['库存不足']);
 
         $result = new CheckoutResult(
             $items,
@@ -185,21 +176,9 @@ final class CheckoutResultTest extends TestCase
     public function testToArray(): void
     {
         $cartItem = $this->createMock(CartItem::class);
-        // 移除对 final 方法的 mock 配置
-        // $cartItem->method('getId')->willReturn('1');
-        // $cartItem->method('getQuantity')->willReturn(2);
-
-        $priceResult = $this->createMock(PriceResult::class);
-        $priceResult->method('toArray')->willReturn(['subtotal' => 100.0]);
-
-        $shippingResult = $this->createMock(ShippingResult::class);
-        $shippingResult->method('toArray')->willReturn(['fee' => 10.0]);
-        $shippingResult->method('getShippingFee')->willReturn(10.0);
-        $shippingResult->method('isFreeShipping')->willReturn(false);
-
-        $stockValidation = $this->createMock(StockValidationResult::class);
-        $stockValidation->method('toArray')->willReturn(['valid' => true]);
-        $stockValidation->method('isValid')->willReturn(true);
+        $priceResult = new PriceResult('100.00', '90.00', '10.00');
+        $shippingResult = new ShippingResult(10.0, false);
+        $stockValidation = StockValidationResult::success();
 
         $result = new CheckoutResult(
             [$cartItem],

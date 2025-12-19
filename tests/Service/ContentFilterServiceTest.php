@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Tourze\OrderCheckoutBundle\Tests\Service;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractIntegrationTestCase;
 use Tourze\OrderCheckoutBundle\DTO\FilterResult;
 use Tourze\OrderCheckoutBundle\Exception\ContentFilterException;
 use Tourze\OrderCheckoutBundle\Service\ContentFilterService;
@@ -14,13 +15,14 @@ use Tourze\OrderCheckoutBundle\Service\ContentFilterService;
  * @internal
  */
 #[CoversClass(ContentFilterService::class)]
-final class ContentFilterServiceTest extends TestCase
+#[RunTestsInSeparateProcesses]
+final class ContentFilterServiceTest extends AbstractIntegrationTestCase
 {
     private ContentFilterService $contentFilterService;
 
-    protected function setUp(): void
+    protected function onSetUp(): void
     {
-        $this->contentFilterService = new ContentFilterService();
+        $this->contentFilterService = self::getService(ContentFilterService::class);
     }
 
     public function testFilterContentWithNoSensitiveWords(): void

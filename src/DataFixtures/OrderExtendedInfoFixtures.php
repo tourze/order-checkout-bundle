@@ -11,7 +11,7 @@ use Tourze\OrderCheckoutBundle\Entity\OrderExtendedInfo;
 /**
  * 订单扩展信息测试数据
  */
-class OrderExtendedInfoFixtures extends Fixture
+final class OrderExtendedInfoFixtures extends Fixture
 {
     public function load(ObjectManager $manager): void
     {

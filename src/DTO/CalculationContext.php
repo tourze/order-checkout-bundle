@@ -9,7 +9,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * 价格计算上下文
  */
-class CalculationContext
+final class CalculationContext
 {
     /**
      * @param CheckoutItem[]   $items          购物车项列表

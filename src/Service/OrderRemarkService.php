@@ -12,7 +12,7 @@ use Tourze\OrderCheckoutBundle\Entity\OrderExtendedInfo;
 use Tourze\OrderCheckoutBundle\Exception\OrderException;
 use Tourze\OrderCheckoutBundle\Repository\OrderExtendedInfoRepository;
 
-class OrderRemarkService
+final class OrderRemarkService
 {
     public function __construct(
         private readonly EntityManagerInterface $entityManager,

@@ -8,8 +8,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tourze\JsonRPC\Core\Model\JsonRpcParams;
 use Tourze\JsonRPC\Core\Model\JsonRpcRequest;
-use Tourze\JsonRPC\Core\Tests\AbstractProcedureTestCase;
+use Tourze\JsonRPC\Core\Result\ArrayResult;
+use Tourze\OrderCheckoutBundle\Param\Checkout\CalculateShippingFeeParam;
 use Tourze\OrderCheckoutBundle\Procedure\Checkout\CalculateShippingFee;
+use Tourze\PHPUnitJsonRPC\AbstractProcedureTestCase;
 
 /**
  * @internal
@@ -20,6 +22,15 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
 {
     private CalculateShippingFee $procedure;
 
+    private function createJsonRpcRequest(?JsonRpcParams $params = null): JsonRpcRequest
+    {
+        $request = new JsonRpcRequest();
+        $request->setMethod('test');
+        $request->setParams($params);
+
+        return $request;
+    }
+
     protected function onSetUp(): void
     {
         // 从服务容器获取 procedure 实例，使用真实依赖进行集成测试
@@ -28,9 +39,10 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
 
     public function testExecuteSuccess(): void
     {
-        // 设置 procedure 参数
-        $this->procedure->addressId = 'address123';
-        $this->procedure->items = [
+        // 设置 procedure 参数，使用 Param 对象
+        $param = new CalculateShippingFeeParam();
+        $param->addressId = 'address123';
+        $param->items = [
             [
                 'productId' => 'product1',
                 'quantity' => 2,
@@ -46,10 +58,10 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
             ],
         ];
 
-        $response = $this->procedure->execute();
+        $response = $this->procedure->execute($param);
 
-        // 验证返回结果的基本结构
-        $this->assertIsArray($response);
+        // 验证返回结果是 ArrayResult 实例
+        $this->assertInstanceOf(ArrayResult::class, $response);
         $this->assertArrayHasKey('fee', $response);
         $this->assertArrayHasKey('isFreeShipping', $response);
         $this->assertArrayHasKey('isDeliverable', $response);
@@ -66,8 +78,9 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
     public function testExecuteWithError(): void
     {
         // 设置无效的地址ID，应该导致错误
-        $this->procedure->addressId = 'invalid_address';
-        $this->procedure->items = [
+        $param = new CalculateShippingFeeParam();
+        $param->addressId = 'invalid_address';
+        $param->items = [
             [
                 'productId' => 'product1',
                 'quantity' => 1,
@@ -75,10 +88,10 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
             ],
         ];
 
-        $response = $this->procedure->execute();
+        $response = $this->procedure->execute($param);
 
-        // 验证返回结果的基本结构
-        $this->assertIsArray($response);
+        // 验证返回结果是 ArrayResult 实例
+        $this->assertInstanceOf(ArrayResult::class, $response);
         $this->assertArrayHasKey('fee', $response);
         $this->assertArrayHasKey('isDeliverable', $response);
         $this->assertArrayHasKey('errorMessage', $response);
@@ -89,8 +102,9 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
 
     public function testExecuteWithMinimalItemData(): void
     {
-        $this->procedure->addressId = 'address123';
-        $this->procedure->items = [
+        $param = new CalculateShippingFeeParam();
+        $param->addressId = 'address123';
+        $param->items = [
             [
                 'productId' => 'product1',
                 'quantity' => 1,
@@ -98,10 +112,10 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
             ],
         ];
 
-        $response = $this->procedure->execute();
+        $response = $this->procedure->execute($param);
 
-        // 验证返回结果的基本结构
-        $this->assertIsArray($response);
+        // 验证返回结果是 ArrayResult 实例
+        $this->assertInstanceOf(ArrayResult::class, $response);
         $this->assertArrayHasKey('fee', $response);
         $this->assertArrayHasKey('isFreeShipping', $response);
         $this->assertArrayHasKey('isDeliverable', $response);
@@ -115,24 +129,6 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
         $this->assertIsArray($response['details']);
     }
 
-    public function testGetMockResult(): void
-    {
-        $mockResult = CalculateShippingFee::getMockResult();
-
-        $this->assertIsArray($mockResult);
-        $this->assertArrayHasKey('fee', $mockResult);
-        $this->assertArrayHasKey('isFreeShipping', $mockResult);
-        $this->assertArrayHasKey('isDeliverable', $mockResult);
-        $this->assertArrayHasKey('errorMessage', $mockResult);
-        $this->assertArrayHasKey('details', $mockResult);
-
-        // 验证 Mock 结果的基本类型
-        $this->assertIsString($mockResult['fee']);
-        $this->assertIsBool($mockResult['isFreeShipping']);
-        $this->assertIsBool($mockResult['isDeliverable']);
-        $this->assertIsArray($mockResult['details']);
-    }
-
     public function testGetCacheKey(): void
     {
         $addressId = 'address123';
@@ -141,10 +137,8 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
             ['productId' => 'product2', 'quantity' => 2, 'weight' => '1.500'],
         ];
 
-        $request = $this->createMock(JsonRpcRequest::class);
-        $params = $this->createMock(JsonRpcParams::class);
-        $params->method('toArray')->willReturn(['addressId' => $addressId, 'items' => $items]);
-        $request->method('getParams')->willReturn($params);
+        $params = new JsonRpcParams(['addressId' => $addressId, 'items' => $items]);
+        $request = $this->createJsonRpcRequest($params);
 
         $cacheKey = $this->procedure->getCacheKey($request);
         $itemsHash = md5(json_encode($items, JSON_THROW_ON_ERROR));
@@ -155,13 +149,13 @@ final class CalculateShippingFeeTest extends AbstractProcedureTestCase
 
     public function testGetCacheDuration(): void
     {
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
         $this->assertSame(300, $this->procedure->getCacheDuration($request));
     }
 
     public function testGetCacheTags(): void
     {
-        $request = $this->createMock(JsonRpcRequest::class);
+        $request = $this->createJsonRpcRequest();
         $tags = iterator_to_array($this->procedure->getCacheTags($request));
         $this->assertSame(['shipping_calculation', 'checkout'], $tags);
     }

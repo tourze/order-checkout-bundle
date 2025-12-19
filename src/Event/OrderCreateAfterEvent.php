@@ -11,7 +11,7 @@ use Symfony\Contracts\EventDispatcher\Event;
  * 订单完成事件
  * 在ProcessCheckoutProcedure成功完成下单后分发
  */
-class OrderCreateAfterEvent extends Event
+final class OrderCreateAfterEvent extends Event
 {
     public function __construct(
         private readonly int $orderId,
@@ -129,7 +129,7 @@ class OrderCreateAfterEvent extends Event
      */
     public function hasCoupons(): bool
     {
-        return !empty($this->getCouponCodes());
+        return $this->getCouponCodes() !== [];
     }
 
     /**
@@ -179,6 +179,6 @@ class OrderCreateAfterEvent extends Event
      */
     public function hasStockWarnings(): bool
     {
-        return !empty($this->getStockWarnings());
+        return $this->getStockWarnings() !== [];
     }
 }

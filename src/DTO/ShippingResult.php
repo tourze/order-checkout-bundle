@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 运费计算结果
  */
-class ShippingResult
+final class ShippingResult
 {
     /**
      * @param array<string, mixed> $details 计算详情

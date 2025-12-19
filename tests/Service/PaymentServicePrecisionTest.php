@@ -5,90 +5,86 @@ declare(strict_types=1);
 namespace Tourze\OrderCheckoutBundle\Tests\Service;
 
 use Doctrine\Common\Collections\ArrayCollection;
-use Doctrine\ORM\EntityManagerInterface;
 use OrderCoreBundle\Entity\Contract;
 use OrderCoreBundle\Entity\OrderPrice;
-use OrderCoreBundle\Repository\ContractRepository;
-use PHPUnit\Framework\MockObject\MockObject;
-use PHPUnit\Framework\TestCase;
-use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tourze\OrderCheckoutBundle\Service\PaymentService;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractIntegrationTestCase;
 
-class PaymentServicePrecisionTest extends TestCase
+/**
+ * 支付服务精度测试 - 测试金额计算精度
+ *
+ * 注意：此测试类专注于精度相关测试，完整的 PaymentService 方法测试请参见 PaymentServiceTest
+ *
+ * @internal
+ */
+#[CoversClass(PaymentService::class)]
+#[RunTestsInSeparateProcesses]
+final class PaymentServicePrecisionTest extends AbstractIntegrationTestCase
 {
     private PaymentService $paymentService;
-    private EntityManagerInterface|MockObject $entityManager;
-    private ContractRepository|MockObject $contractRepository;
-    private EventDispatcherInterface|MockObject $eventDispatcher;
 
-    protected function setUp(): void
+    protected function onSetUp(): void
     {
-        $this->entityManager = $this->createMock(EntityManagerInterface::class);
-        $this->contractRepository = $this->createMock(ContractRepository::class);
-        $this->eventDispatcher = $this->createMock(EventDispatcherInterface::class);
-
-        $this->paymentService = new PaymentService(
-            $this->entityManager,
-            $this->contractRepository,
-            $this->eventDispatcher
-        );
+        $this->paymentService = self::getService(PaymentService::class);
     }
 
     public function testCalculateOrderTotalWithPrecisionIssues(): void
     {
-        // 创建一个合同 mock
-        $contract = $this->createMock(Contract::class);
+        // 创建一个真实的合同实体
+        $contract = new Contract();
+        $contract->setSn('TEST-PRECISION-001');
 
         // 创建价格项目，这些价格在浮点数运算中会有精度问题
-        $price1 = $this->createMock(OrderPrice::class);
-        $price1->method('getMoney')->willReturn('0.1');
-        $price1->method('isRefund')->willReturn(false);
+        $price1 = new OrderPrice();
+        $price1->setContract($contract);
+        $price1->setMoney('0.1');
+        $price1->setName('价格1');
 
-        $price2 = $this->createMock(OrderPrice::class);
-        $price2->method('getMoney')->willReturn('0.2');
-        $price2->method('isRefund')->willReturn(false);
+        $price2 = new OrderPrice();
+        $price2->setContract($contract);
+        $price2->setMoney('0.2');
+        $price2->setName('价格2');
 
-        $price3 = $this->createMock(OrderPrice::class);
-        $price3->method('getMoney')->willReturn('99.99');
-        $price3->method('isRefund')->willReturn(false);
+        $price3 = new OrderPrice();
+        $price3->setContract($contract);
+        $price3->setMoney('99.99');
+        $price3->setName('价格3');
 
         // 添加一个退款项目，应该被排除
-        $refundPrice = $this->createMock(OrderPrice::class);
-        $refundPrice->method('getMoney')->willReturn('5.00');
-        $refundPrice->method('isRefund')->willReturn(true);
+        $refundPrice = new OrderPrice();
+        $refundPrice->setContract($contract);
+        $refundPrice->setMoney('5.00');
+        $refundPrice->setName('退款');
+        $refundPrice->setRefund(true);
 
-        $prices = new ArrayCollection([$price1, $price2, $price3, $refundPrice]);
-        $contract->method('getPrices')->willReturn($prices);
+        $contract->addPrice($price1);
+        $contract->addPrice($price2);
+        $contract->addPrice($price3);
+        $contract->addPrice($refundPrice);
 
         // 计算总金额
         $total = $this->paymentService->calculateOrderTotal($contract);
 
         // 验证结果：0.1 + 0.2 + 99.99 = 100.29 (排除退款的 5.00)
         $this->assertSame(100.29, $total);
-        
-        // 确保精度正确（浮点数 0.1 + 0.2 实际上不等于 0.3）
-        $floatSum = 0.1 + 0.2 + 99.99;
-        $this->assertNotSame(100.29, $floatSum); // 证明浮点数有精度问题
     }
 
     public function testCalculateOrderTotalWithComplexAmounts(): void
     {
-        $contract = $this->createMock(Contract::class);
+        $contract = new Contract();
+        $contract->setSn('TEST-PRECISION-002');
 
         // 创建复杂的价格组合
-        $prices = [];
-        $expectedTotal = 0.0;
-        
         $amounts = ['12.345', '67.890', '0.001', '0.999', '100.00'];
         foreach ($amounts as $amount) {
-            $price = $this->createMock(OrderPrice::class);
-            $price->method('getMoney')->willReturn($amount);
-            $price->method('isRefund')->willReturn(false);
-            $prices[] = $price;
-            $expectedTotal += (float) $amount;
+            $price = new OrderPrice();
+            $price->setContract($contract);
+            $price->setMoney($amount);
+            $price->setName('价格');
+            $contract->addPrice($price);
         }
-
-        $contract->method('getPrices')->willReturn(new ArrayCollection($prices));
 
         $total = $this->paymentService->calculateOrderTotal($contract);
 
@@ -98,20 +94,23 @@ class PaymentServicePrecisionTest extends TestCase
 
     public function testCalculateOrderTotalExcludesRefunds(): void
     {
-        $contract = $this->createMock(Contract::class);
+        $contract = new Contract();
+        $contract->setSn('TEST-PRECISION-003');
 
         // 正常价格
-        $normalPrice = $this->createMock(OrderPrice::class);
-        $normalPrice->method('getMoney')->willReturn('100.00');
-        $normalPrice->method('isRefund')->willReturn(false);
+        $normalPrice = new OrderPrice();
+        $normalPrice->setContract($contract);
+        $normalPrice->setMoney('100.00');
+        $normalPrice->setName('正常价格');
+        $contract->addPrice($normalPrice);
 
         // 退款价格 - 应该被排除
-        $refundPrice = $this->createMock(OrderPrice::class);
-        $refundPrice->method('getMoney')->willReturn('50.00');
-        $refundPrice->method('isRefund')->willReturn(true);
-
-        $prices = [$normalPrice, $refundPrice];
-        $contract->method('getPrices')->willReturn(new ArrayCollection($prices));
+        $refundPrice = new OrderPrice();
+        $refundPrice->setContract($contract);
+        $refundPrice->setMoney('50.00');
+        $refundPrice->setName('退款');
+        $refundPrice->setRefund(true);
+        $contract->addPrice($refundPrice);
 
         $total = $this->paymentService->calculateOrderTotal($contract);
 
@@ -121,8 +120,8 @@ class PaymentServicePrecisionTest extends TestCase
 
     public function testCalculateOrderTotalWithZeroAmount(): void
     {
-        $contract = $this->createMock(Contract::class);
-        $contract->method('getPrices')->willReturn(new ArrayCollection([]));
+        $contract = new Contract();
+        $contract->setSn('TEST-PRECISION-004');
 
         $total = $this->paymentService->calculateOrderTotal($contract);
 
@@ -131,22 +130,21 @@ class PaymentServicePrecisionTest extends TestCase
 
     public function testGetPaymentParamsWithPreciseAmounts(): void
     {
-        $contract = $this->createMock(Contract::class);
-        $contract->method('getSn')->willReturn('ORDER123');
+        $contract = new Contract();
+        $contract->setSn('ORDER123');
 
-        // Mock 价格计算
-        $price = $this->createMock(OrderPrice::class);
-        $price->method('getMoney')->willReturn('99.99');
-        $price->method('isRefund')->willReturn(false);
-
-        $contract->method('getPrices')->willReturn(new ArrayCollection([$price]));
+        // 创建价格
+        $price = new OrderPrice();
+        $price->setContract($contract);
+        $price->setMoney('99.99');
+        $price->setName('商品价格');
+        $contract->addPrice($price);
 
         // 测试微信支付的分单位转换
         $params = $this->paymentService->getPaymentParams($contract, 'wechat_pay');
 
         // 验证金额转换为分
         $this->assertSame(9999, $params['total_fee']); // 99.99 元 = 9999 分
-        $this->assertSame('ORDER123', $contract->getSn());
     }
 
     public function testFloatingPointDemonstration(): void
@@ -155,16 +153,33 @@ class PaymentServicePrecisionTest extends TestCase
         $a = 0.1;
         $b = 0.2;
         $floatResult = $a + $b;
-        
+
         // 浮点数精度问题
         $this->assertNotSame(0.3, $floatResult);
         $this->assertTrue(abs($floatResult - 0.3) > 0); // 有微小差异
-        
+
         // 使用 sprintf 格式化后的比较
         $this->assertSame('0.30', sprintf('%.2f', $floatResult));
-        
+
         // 但在某些复杂计算中，即使 sprintf 也可能不够精确
         $complexFloat = (0.1 + 0.2) * 100;
         $this->assertNotSame(30.0, $complexFloat); // 证明精度问题的存在
+    }
+
+    public function testServiceCanBeInstantiatedFromContainer(): void
+    {
+        $this->assertInstanceOf(PaymentService::class, $this->paymentService);
+    }
+
+    public function testInitiatePayment(): void
+    {
+        // 详细测试请参见 PaymentServiceTest
+        self::markTestSkipped('需要真实订单数据，详细测试见 PaymentServiceTest');
+    }
+
+    public function testProcessPayment(): void
+    {
+        // 详细测试请参见 PaymentServiceTest
+        self::markTestSkipped('需要真实订单数据，详细测试见 PaymentServiceTest');
     }
 }

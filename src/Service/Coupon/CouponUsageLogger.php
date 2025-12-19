@@ -8,7 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Tourze\OrderCheckoutBundle\Entity\CouponAllocationDetail;
 use Tourze\OrderCheckoutBundle\Entity\CouponUsageLog;
 
-class CouponUsageLogger
+final class CouponUsageLogger
 {
     public function __construct(private readonly EntityManagerInterface $entityManager)
     {

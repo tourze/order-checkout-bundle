@@ -1,145 +1,40 @@
 services:
+  # default configuration for services in *this* file
   _defaults:
-    autowire: true
-    autoconfigure: true
+    autowire: true      # Automatically injects dependencies in your services.
+    autoconfigure: true # Automatically registers your services as commands, event subscribers, etc.
+    public: false
 
-  # 仓储服务
-  Tourze\OrderCheckoutBundle\Repository\OrderExtendedInfoRepository:
-    arguments:
-      - '@doctrine'
-    tags:
-      - doctrine.repository_service
-  Tourze\OrderCheckoutBundle\Repository\ShippingTemplateRepository:
-    arguments:
-      - '@doctrine'
-    tags:
-      - doctrine.repository_service
-
-  Tourze\OrderCheckoutBundle\Repository\ShippingTemplateAreaRepository:
-    arguments:
-      - '@doctrine'
-    tags:
-      - doctrine.repository_service
-  Tourze\OrderCheckoutBundle\Repository\CouponUsageLogRepository:
-    arguments:
-      - '@doctrine'
-    tags:
-      - doctrine.repository_service
-
-  Tourze\OrderCheckoutBundle\Repository\CouponAllocationDetailRepository:
-    arguments:
-      - '@doctrine'
-    tags:
-      - doctrine.repository_service
-
+  Tourze\OrderCheckoutBundle\Controller\:
+    resource: '../../Controller/'
+  Tourze\OrderCheckoutBundle\Repository\:
+    resource: '../../Repository/'
+  Tourze\OrderCheckoutBundle\Service\:
+    resource: '../../Service/'
+    public: true
+  Tourze\OrderCheckoutBundle\Calculator\:
+    resource: '../../Calculator/'
+    public: true
   Tourze\OrderCheckoutBundle\Provider\:
     resource: '../../Provider/'
-
-  # 核心服务
-  Tourze\OrderCheckoutBundle\Service\PriceCalculationService:
-    calls:
-      - [ 'addCalculator', [ '@Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator' ] ]
-      - [ 'addCalculator', [ '@Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator' ] ]
-      - [ 'addCalculator', [ '@Tourze\OrderCheckoutBundle\Calculator\CouponCalculator' ] ]
-
-  Tourze\OrderCheckoutBundle\Service\BasicStockValidator: ~
-
-  Tourze\OrderCheckoutBundle\Service\ContentFilterService: ~
-
-  Tourze\OrderCheckoutBundle\Service\OrderRemarkService: ~
-
-  Tourze\OrderCheckoutBundle\Service\ShippingCalculationService: ~
-
-  Tourze\OrderCheckoutBundle\Service\BasicAddressResolver: ~
-
-  # 优惠券推荐服务
-  Tourze\OrderCheckoutBundle\Service\CouponRecommendationService:
-    arguments:
-      - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
-      - '@Tourze\CouponCoreBundle\Service\CouponEvaluator'
-      - '@Tourze\ProductServiceContracts\SkuLoaderInterface'
-      - '@logger'
-
-  # 优惠券工作流助手（使用新的Provider链）
-  Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper:
-    arguments:
-      - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
-      - '@Tourze\ProductCoreBundle\Service\SkuServiceInterface'
-      - '@Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger'
-
-  Tourze\OrderCheckoutBundle\Service\Coupon\CouponUsageLogger: ~
-
-  Tourze\OrderCheckoutBundle\Service\PaymentService: ~
-
-  Tourze\OrderCheckoutBundle\Service\MoneyCalculator: ~
-
-  Tourze\OrderCheckoutBundle\Calculator\BasicShippingCalculator: ~
-
-  Tourze\OrderCheckoutBundle\Service\CheckoutService:
-    arguments:
-      - '@Tourze\OrderCheckoutBundle\Service\PriceCalculationService'
-      - '@Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface'
-      - '@Tourze\OrderCheckoutBundle\Contract\ShippingCalculatorInterface'
-      - '@Tourze\OrderCheckoutBundle\Service\ContentFilterService'
-      - '@doctrine.orm.entity_manager'
-      - '@OrderCoreBundle\Service\ContractService'
-      - '@Tourze\OrderCartBundle\Interface\CartManagerInterface'
-      - '@Tourze\StockManageBundle\Service\StockOperator'
-      - '@Tourze\DeliveryAddressBundle\Service\DeliveryAddressService'
-      - '@Tourze\OrderCheckoutBundle\Service\Coupon\CouponWorkflowHelper'
-
-  # 价格计算器
-  Tourze\OrderCheckoutBundle\Calculator\BasePriceCalculator:
-    arguments:
-      - '@Tourze\ProductServiceContracts\SkuLoaderInterface'
-    tags:
-      - order_checkout.price_calculator
-
-  Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator:
-    tags:
-      - order_checkout.price_calculator
-
-  # 优惠券计算器（使用新的Provider链）
-  Tourze\OrderCheckoutBundle\Calculator\CouponCalculator:
-    arguments:
-      - '@Tourze\OrderCheckoutBundle\Provider\CouponProviderChain'
-      - '@Tourze\CouponCoreBundle\Service\CouponEvaluator'
-      - '@Tourze\ProductServiceContracts\SkuLoaderInterface'
-      - '@logger'
-    tags:
-      - order_checkout.price_calculator
+    public: true
+  Tourze\OrderCheckoutBundle\EventSubscriber\:
+    resource: '../../EventSubscriber/'
+    public: true
+  Tourze\OrderCheckoutBundle\Procedure\:
+    resource: '../../Procedure/'
+    public: true
 
   # 促销匹配器
   Tourze\OrderCheckoutBundle\Promotion\FullReductionMatcher:
     tags:
       - order_checkout.promotion_matcher
 
-  # 外部依赖服务引用（来自其他bundle）
-  Tourze\OrderCartBundle\Repository\CartItemRepository:
-    arguments:
-      $registry: '@doctrine'
-    tags:
-      - 'doctrine.repository_service'
-    public: true
-
-  Tourze\OrderCartBundle\Tests\MockProductProvider:
-    public: true
-
-  Tourze\OrderCartBundle\Service\CartDataProvider:
-    public: true
-
   # 接口绑定到具体实现
   Tourze\OrderCartBundle\Interface\CartDataProviderInterface: '@Tourze\OrderCartBundle\Service\CartDataProvider'
-  Tourze\OrderCartBundle\Interface\ProductProviderInterface: '@Tourze\OrderCartBundle\Tests\MockProductProvider'
-
-  # 接口别名
   Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface: '@Tourze\OrderCheckoutBundle\Service\BasicStockValidator'
   Tourze\OrderCheckoutBundle\Contract\ShippingCalculatorInterface: '@Tourze\OrderCheckoutBundle\Calculator\BasicShippingCalculator'
   Tourze\OrderCheckoutBundle\Contract\AddressResolverInterface: '@Tourze\OrderCheckoutBundle\Service\BasicAddressResolver'
-
-  # 外部服务接口别名
-  OrderCoreBundle\Service\ContractService: '@OrderCoreBundle\Service\ContractBaseService'
-  Tourze\OrderCartBundle\Interface\CartManagerInterface: '@Tourze\OrderCartBundle\Service\CartManager'
 
   # 公共服务别名
   order_checkout.checkout_service:
@@ -150,43 +45,6 @@ services:
     alias: Tourze\OrderCheckoutBundle\Service\PriceCalculationService
     public: true
 
-  # AttributeControllerLoader 服务
-  Tourze\OrderCheckoutBundle\Service\AttributeControllerLoader: ~
-
-  # CRUD 控制器
-  Tourze\OrderCheckoutBundle\Controller\OrderExtendedInfoCrudController: ~
-  Tourze\OrderCheckoutBundle\Controller\ShippingTemplateCrudController: ~
-  Tourze\OrderCheckoutBundle\Controller\ShippingTemplateAreaCrudController: ~
-
-  # 自动注册所有 Procedure 类
-  Tourze\OrderCheckoutBundle\Procedure\:
-    resource: '../../Procedure/'
+  order_checkout.coupon_allocation_service:
+    alias: Tourze\OrderCheckoutBundle\Service\CouponAllocationService
     public: true
-    tags:
-      - json_rpc.procedure
-
-  # 确保 Procedure 服务能够被正确注入并继承上面的配置
-  Tourze\OrderCheckoutBundle\Procedure\Checkout\ProcessCheckoutProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure
-  Tourze\OrderCheckoutBundle\Procedure\Checkout\CalculatePriceProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure
-  Tourze\OrderCheckoutBundle\Procedure\Checkout\ValidateStockProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure
-  Tourze\OrderCheckoutBundle\Procedure\Order\GetOrderRemarkHistoryProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure
-  Tourze\OrderCheckoutBundle\Procedure\Order\SaveOrderRemarkProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure
-  Tourze\OrderCheckoutBundle\Procedure\Payment\InitiatePaymentProcedure:
-    public: true
-    tags:
-      - json_rpc.procedure

@@ -7,7 +7,7 @@ namespace Tourze\OrderCheckoutBundle\DTO;
 /**
  * 价格计算结果
  */
-class PriceResult
+final class PriceResult
 {
     /** @var numeric-string */
     private readonly string $originalPrice;

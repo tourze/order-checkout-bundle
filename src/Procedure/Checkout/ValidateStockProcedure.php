@@ -10,18 +10,21 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Tourze\JsonRPC\Core\Attribute\MethodDoc;
 use Tourze\JsonRPC\Core\Attribute\MethodExpose;
 use Tourze\JsonRPC\Core\Attribute\MethodTag;
+use Tourze\JsonRPC\Core\Contracts\RpcParamInterface;
+use Tourze\JsonRPC\Core\Result\ArrayResult;
 use Tourze\JsonRPC\Core\Exception\ApiException;
 use Tourze\JsonRPC\Core\Model\JsonRpcRequest;
 use Tourze\JsonRPCCacheBundle\Procedure\CacheableProcedure;
 use Tourze\OrderCartBundle\Interface\CartDataProviderInterface;
 use Tourze\OrderCheckoutBundle\Contract\StockValidatorInterface;
 use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
+use Tourze\OrderCheckoutBundle\Param\Checkout\ValidateStockParam;
 
 #[MethodTag(name: '订单结算')]
 #[MethodDoc(description: '验证购物车商品库存状况')]
 #[MethodExpose(method: 'ValidateCheckoutStock')]
 #[IsGranted(attribute: 'ROLE_USER')]
-class ValidateStockProcedure extends CacheableProcedure
+final class ValidateStockProcedure extends CacheableProcedure
 {
     public function __construct(
         private readonly Security $security,
@@ -30,7 +33,10 @@ class ValidateStockProcedure extends CacheableProcedure
     ) {
     }
 
-    public function execute(): array
+    /**
+     * @phpstan-param ValidateStockParam $param
+     */
+    public function execute(ValidateStockParam|RpcParamInterface $param): ArrayResult
     {
         $user = $this->security->getUser();
         if (!$user instanceof UserInterface) {
@@ -53,7 +59,7 @@ class ValidateStockProcedure extends CacheableProcedure
         // 验证库存
         $validationResult = $this->stockValidator->validate($checkoutItems);
 
-        return [
+        return new ArrayResult([
             'isValid' => $validationResult->isValid(),
             'hasWarnings' => [] !== $validationResult->getWarnings(),
             'errors' => $validationResult->getErrors(),
@@ -65,7 +71,7 @@ class ValidateStockProcedure extends CacheableProcedure
                 'invalidItems' => count($validationResult->getErrors()),
                 'warningItems' => count($validationResult->getWarnings()),
             ],
-        ];
+        ]);
     }
 
     public function getCacheKey(JsonRpcRequest $request): string
@@ -91,43 +97,9 @@ class ValidateStockProcedure extends CacheableProcedure
             throw new ApiException('用户未登录或类型错误');
         }
 
-        return [
+        return new ArrayResult([
             'stock_validation',
             'cart_user_' . $user->getUserIdentifier(),
-        ];
-    }
-
-    public static function getMockResult(): ?array
-    {
-        return [
-            'isValid' => false,
-            'hasWarnings' => true,
-            'errors' => [
-                '100' => '商品 SKU001 库存不足，需要 5 件，仅有 3 件',
-            ],
-            'warnings' => [
-                '101' => '商品 SKU002 库存较少，仅剩 8 件',
-            ],
-            'details' => [
-                '100' => [
-                    'sku_code' => 'SKU001',
-                    'sku_name' => '商品1',
-                    'requested_quantity' => 5,
-                    'available_quantity' => 3,
-                ],
-                '101' => [
-                    'sku_code' => 'SKU002',
-                    'sku_name' => '商品2',
-                    'requested_quantity' => 2,
-                    'available_quantity' => 8,
-                ],
-            ],
-            'summary' => [
-                'totalItems' => 2,
-                'validItems' => 1,
-                'invalidItems' => 1,
-                'warningItems' => 1,
-            ],
-        ];
+        ]);
     }
 }

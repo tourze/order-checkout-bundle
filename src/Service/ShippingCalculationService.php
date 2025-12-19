@@ -15,7 +15,7 @@ use Tourze\OrderCheckoutBundle\Enum\ChargeType;
 use Tourze\OrderCheckoutBundle\Repository\ShippingTemplateAreaRepository;
 use Tourze\OrderCheckoutBundle\Repository\ShippingTemplateRepository;
 
-class ShippingCalculationService
+final class ShippingCalculationService
 {
     public function __construct(
         private readonly ShippingTemplateRepository $shippingTemplateRepository,

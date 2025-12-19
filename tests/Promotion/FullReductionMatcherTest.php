@@ -24,6 +24,7 @@ final class FullReductionMatcherTest extends TestCase
 
     protected function setUp(): void
     {
+        parent::setUp();
         $this->user = $this->createMock(UserInterface::class);
     }
 

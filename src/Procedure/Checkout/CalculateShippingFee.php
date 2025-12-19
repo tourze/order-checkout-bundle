@@ -7,37 +7,33 @@ namespace Tourze\OrderCheckoutBundle\Procedure\Checkout;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 use Tourze\JsonRPC\Core\Attribute\MethodDoc;
 use Tourze\JsonRPC\Core\Attribute\MethodExpose;
-use Tourze\JsonRPC\Core\Attribute\MethodParam;
 use Tourze\JsonRPC\Core\Attribute\MethodReturn;
 use Tourze\JsonRPC\Core\Attribute\MethodTag;
+use Tourze\JsonRPC\Core\Contracts\RpcParamInterface;
+use Tourze\JsonRPC\Core\Result\ArrayResult;
 use Tourze\JsonRPC\Core\Model\JsonRpcRequest;
 use Tourze\JsonRPCCacheBundle\Procedure\CacheableProcedure;
 use Tourze\OrderCheckoutBundle\DTO\ShippingCalculationInput;
 use Tourze\OrderCheckoutBundle\DTO\ShippingCalculationItem;
+use Tourze\OrderCheckoutBundle\Param\Checkout\CalculateShippingFeeParam;
 use Tourze\OrderCheckoutBundle\Service\ShippingCalculationService;
 
 #[MethodExpose(method: 'CalculateCheckoutShippingFee')]
 #[MethodTag(name: 'checkout')]
 #[MethodDoc(description: '计算运费')]
 #[IsGranted(attribute: 'ROLE_USER')]
-class CalculateShippingFee extends CacheableProcedure
+final class CalculateShippingFee extends CacheableProcedure
 {
-    #[MethodParam(description: '收货地址ID')]
-    public string $addressId;
-
-    /**
-     * @var array<int, array{productId: string, quantity: int, weight: string, price?: string, shippingTemplateId?: string}>
-     */
-    #[MethodParam(description: '商品列表，格式：[{productId: string, quantity: int, weight: string, price?: string, shippingTemplateId?: string}]')]
-    public array $items;
-
     public function __construct(
         private readonly ShippingCalculationService $shippingCalculationService,
     ) {
     }
 
+    /**
+     * @phpstan-param CalculateShippingFeeParam $param
+     */
     #[MethodReturn(description: '运费计算结果')]
-    public function execute(): array
+    public function execute(CalculateShippingFeeParam|RpcParamInterface $param): ArrayResult
     {
         $calculationItems = array_map(
             function (array $item): ShippingCalculationItem {
@@ -52,17 +48,17 @@ class CalculateShippingFee extends CacheableProcedure
                     shippingTemplateId: $item['shippingTemplateId'] ?? null,
                 );
             },
-            $this->items
+            $param->items
         );
 
         $input = new ShippingCalculationInput(
-            addressId: $this->addressId,
+            addressId: $param->addressId,
             items: $calculationItems,
         );
 
         $result = $this->shippingCalculationService->calculate($input);
 
-        return [
+        return new ArrayResult([
             'fee' => $result->fee,
             'freeShippingThreshold' => $result->freeShippingThreshold,
             'isFreeShipping' => $result->isFreeShipping,
@@ -81,30 +77,7 @@ class CalculateShippingFee extends CacheableProcedure
                 ],
                 $result->details
             ),
-        ];
-    }
-
-    public static function getMockResult(): ?array
-    {
-        return [
-            'fee' => '12.00',
-            'freeShippingThreshold' => '99.00',
-            'isFreeShipping' => false,
-            'isDeliverable' => true,
-            'errorMessage' => null,
-            'details' => [
-                [
-                    'templateId' => '123',
-                    'templateName' => '默认运费模板',
-                    'chargeType' => 'weight',
-                    'unitValue' => '1.500',
-                    'fee' => '12.00',
-                    'isFreeShipping' => false,
-                    'areaName' => '广东省',
-                    'calculation' => '按重量计费(广东省)：1.500kg，运费¥12.00',
-                ],
-            ],
-        ];
+        ]);
     }
 
     public function getCacheKey(JsonRpcRequest $request): string

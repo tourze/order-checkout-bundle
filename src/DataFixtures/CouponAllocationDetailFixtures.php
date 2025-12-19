@@ -9,7 +9,7 @@ use Symfony\Component\DependencyInjection\Attribute\When;
 use Tourze\OrderCheckoutBundle\Entity\CouponAllocationDetail;
 
 #[When(env: 'dev')]
-class CouponAllocationDetailFixtures extends Fixture implements FixtureGroupInterface
+final class CouponAllocationDetailFixtures extends Fixture implements FixtureGroupInterface
 {
     public function load(ObjectManager $manager): void
     {

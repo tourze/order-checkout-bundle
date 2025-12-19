@@ -34,11 +34,8 @@ final class CouponAllocationDetailRepositoryTest extends AbstractRepositoryTestC
 
     public function testExtendsBaseRepository(): void
     {
-        $stub = $this->getMockBuilder(CouponAllocationDetailRepository::class)
-            ->disableOriginalConstructor()
-            ->onlyMethods([])
-            ->getMock();
-
-        self::assertInstanceOf(ServiceEntityRepository::class, $stub);
+        // Repository 类是 final，无法 mock，直接使用真实实例验证继承关系
+        $repository = $this->getRepository();
+        self::assertInstanceOf(ServiceEntityRepository::class, $repository);
     }
 }

@@ -5,102 +5,126 @@ declare(strict_types=1);
 namespace Tourze\OrderCheckoutBundle\Tests\Calculator;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Tourze\OrderCheckoutBundle\Calculator\PromotionCalculator;
-use Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface;
 use Tourze\OrderCheckoutBundle\DTO\CalculationContext;
+use Tourze\OrderCheckoutBundle\DTO\CheckoutItem;
 use Tourze\OrderCheckoutBundle\DTO\PriceResult;
-use Tourze\OrderCheckoutBundle\DTO\PromotionResult;
+use Tourze\PHPUnitSymfonyKernelTest\AbstractIntegrationTestCase;
 
 /**
  * @internal
  */
 #[CoversClass(PromotionCalculator::class)]
-final class PromotionCalculatorTest extends TestCase
+#[RunTestsInSeparateProcesses]
+final class PromotionCalculatorTest extends AbstractIntegrationTestCase
 {
-    public function testPromotionCalculatorCanBeInstantiated(): void
-    {
-        $calculator = new PromotionCalculator();
+    private PromotionCalculator $calculator;
 
-        $this->assertInstanceOf(PromotionCalculator::class, $calculator);
+    protected function onSetUp(): void
+    {
+        $this->calculator = self::getService(PromotionCalculator::class);
     }
 
-    public function testCalculateReturnsPromotionResult(): void
+    public function testCalculatorCanBeInstantiated(): void
     {
-        $calculator = new PromotionCalculator();
-        $context = $this->createMock(CalculationContext::class);
-
-        $result = $calculator->calculate($context);
-
-        $this->assertInstanceOf(PriceResult::class, $result);
+        $this->assertInstanceOf(PromotionCalculator::class, $this->calculator);
     }
 
-    public function testAddMatcher(): void
+    public function testSupportsWithEmptyItems(): void
     {
-        $calculator = new PromotionCalculator();
-        $matcher = $this->createMock(PromotionMatcherInterface::class);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $context = new CalculationContext($user, [], []);
 
-        // 使用反射获取内部的 matchers 数组
-        $reflection = new \ReflectionClass($calculator);
-        $property = $reflection->getProperty('matchers');
-        $property->setAccessible(true);
-
-        // 添加前检查 matchers 为空
-        $this->assertEmpty($property->getValue($calculator));
-
-        $calculator->addMatcher($matcher);
-
-        // 添加后检查 matchers 包含添加的 matcher
-        $matchers = $property->getValue($calculator);
-        $this->assertIsArray($matchers);
-        $this->assertCount(1, $matchers);
-        $this->assertSame($matcher, $matchers[0]);
+        $this->assertFalse($this->calculator->supports($context));
     }
 
-    public function testSupportsWithEmptyMatchers(): void
+    public function testSupportsWithItems(): void
     {
-        $calculator = new PromotionCalculator();
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn(['some_item']);
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $items = [
+            new CheckoutItem('test-sku-1', 1, true),
+        ];
+        $context = new CalculationContext($user, $items, []);
 
-        $this->assertFalse($calculator->supports($context));
-    }
+        // 没有 matchers 时返回 false
+        $this->assertFalse($this->calculator->supports($context));
 
-    public function testSupportsWithMatchersAndItems(): void
-    {
-        $calculator = new PromotionCalculator();
-        $matcher = $this->createMock(PromotionMatcherInterface::class);
-        $calculator->addMatcher($matcher);
+        // 添加一个 matcher 后返回 true
+        $matcher = $this->createMock(\Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface::class);
+        $matcher->method('getPriority')->willReturn(100);
+        $this->calculator->addMatcher($matcher);
 
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn(['some_item']);
-
-        $this->assertTrue($calculator->supports($context));
-    }
-
-    public function testSupportsWithMatchersButEmptyItems(): void
-    {
-        $calculator = new PromotionCalculator();
-        $matcher = $this->createMock(PromotionMatcherInterface::class);
-        $calculator->addMatcher($matcher);
-
-        $context = $this->createMock(CalculationContext::class);
-        $context->method('getItems')->willReturn([]);
-
-        $this->assertFalse($calculator->supports($context));
+        $this->assertTrue($this->calculator->supports($context));
     }
 
     public function testGetPriority(): void
     {
-        $calculator = new PromotionCalculator();
-
-        $this->assertSame(800, $calculator->getPriority());
+        $this->assertSame(800, $this->calculator->getPriority());
     }
 
     public function testGetType(): void
     {
-        $calculator = new PromotionCalculator();
+        $this->assertSame('promotion', $this->calculator->getType());
+    }
 
-        $this->assertSame('promotion', $calculator->getType());
+    public function testCalculateWithEmptyItems(): void
+    {
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $context = new CalculationContext($user, [], []);
+
+        $result = $this->calculator->calculate($context);
+
+        $this->assertInstanceOf(PriceResult::class, $result);
+        $this->assertSame('0.00', $result->getOriginalPrice());
+        $this->assertSame('0.00', $result->getFinalPrice());
+        $this->assertSame('0.00', $result->getDiscount());
+    }
+
+    public function testCalculateWithItems(): void
+    {
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $items = [
+            new CheckoutItem('test-sku-1', 2, true),
+            new CheckoutItem('test-sku-2', 1, true),
+        ];
+        $context = new CalculationContext($user, $items, []);
+
+        $result = $this->calculator->calculate($context);
+
+        $this->assertInstanceOf(PriceResult::class, $result);
+        // 验证基本结构，具体折扣取决于促销配置
+        $this->assertIsString($result->getOriginalPrice());
+        $this->assertIsString($result->getFinalPrice());
+        $this->assertIsString($result->getDiscount());
+    }
+
+    public function testAddMatcher(): void
+    {
+        $user = $this->createMock(\Symfony\Component\Security\Core\User\UserInterface::class);
+        $items = [new CheckoutItem('test-sku-1', 1, true)];
+        $context = new CalculationContext($user, $items, []);
+
+        // 创建测试用的 matcher
+        $matcher1 = $this->createMock(\Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface::class);
+        $matcher1->method('getPriority')->willReturn(100);
+        $matcher1->method('supports')->willReturn(true);
+        $matcher1->method('match')->willReturn(\Tourze\OrderCheckoutBundle\DTO\PromotionResult::empty());
+
+        $matcher2 = $this->createMock(\Tourze\OrderCheckoutBundle\Contract\PromotionMatcherInterface::class);
+        $matcher2->method('getPriority')->willReturn(200);
+        $matcher2->method('supports')->willReturn(true);
+        $matcher2->method('match')->willReturn(\Tourze\OrderCheckoutBundle\DTO\PromotionResult::empty());
+
+        // 添加 matcher
+        $this->calculator->addMatcher($matcher1);
+        $this->calculator->addMatcher($matcher2);
+
+        // 验证 supports 返回 true（因为有 matcher 且有 items）
+        $this->assertTrue($this->calculator->supports($context));
+
+        // 验证可以计算（不抛出异常）
+        $result = $this->calculator->calculate($context);
+        $this->assertInstanceOf(PriceResult::class, $result);
     }
 }

@@ -4,6 +4,6 @@ declare(strict_types=1);
 
 namespace Tourze\OrderCheckoutBundle\Exception;
 
-class ContentFilterException extends \Exception
+final class ContentFilterException extends \Exception
 {
 }
