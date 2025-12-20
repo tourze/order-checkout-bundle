@@ -32,7 +32,7 @@
     "symfony/yaml": "^7.3",
     "tourze/bundle-dependency": "1.*",
     "tourze/coupon-core-bundle": "0.1.*",
-    "tourze/delivery-address-bundle": "1.0.*",
+    "tourze/delivery-address-bundle": "1.1.*",
     "tourze/doctrine-indexed-bundle": "1.0.*",
     "tourze/doctrine-ip-bundle": "1.1.*",
     "tourze/doctrine-snowflake-bundle": "1.1.*",
